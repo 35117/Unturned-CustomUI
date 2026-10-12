@@ -1,0 +1,62 @@
+# 只发插件源码项目，不发整个游戏目录
+# ⚠ 本仓库通常放在游戏目录里开发（`...\common\Unturned\CustomUI-Source\`），
+#   所以**父目录里那些庞然大物**必须排除，否则一提交就是几十万文件。
+
+# ---- 游戏目录（绝不该进仓库）----
+/Backups/
+/Bundles/
+/Cloud/
+/Content/
+/CuratedMapIcons/
+/Extras/
+/Localization/
+/Maps/
+/Modules/
+/Sandbox/
+/Servers/
+/Logs/
+/BepInEx/
+/BattlEye/
+/Unturned_Data/
+/steamapps/
+*.masterbundle
+*.unity3d
+*.asset
+
+# ---- 构建产物（源码项目里就能编出来，不必发）----
+bin/
+obj/
+*.dll
+*.pdb
+*.mdb
+!packages/**/*.dll
+
+# ---- 运行期 / 本地产物 ----
+*.log
+*.tmp
+*.bak
+*.bak2
+*~
+*.zip
+发布包/
+
+# ---- 编辑器 / 工具 ----
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+
+# ---- 自检输出（生成物，每次跑都会变；别提交）----
+_check.txt
+
+# ---- 内部规划稿（不是对外文档；要发就单独决定）----
+能力缺口盘点_*.md
+
+# ---- 临时脚本（补丁 / 阳性对照脚本用完即删，别误提交）----
+_positive_*.py
+_patch_*.py
+_patch_tmp.py
+
+# ---- 工作区记忆与技能（内部资料，默认不发；要发就单独决定）----
+.workbuddy/
