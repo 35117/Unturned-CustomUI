@@ -100,6 +100,24 @@ def sdk_read(rel):
         return f.read()
 
 
+# ------------------------------ 外部消费者（通用扫描，不点名任何插件）------
+# 铁律：仓库里**不许写任何具体插件的名字**。消费者由环境变量 `CONSUMERS_DIR` 指过来
+#   （逗号分隔多个目录；本机开发时指向真实源码目录即可，**不必复制**源码）。
+#   外部使用者不设这个变量、也没有 ./consumers ⟹ 与「外部消费者」相关的判据一律 **SKIP**
+#   （不算失败、不计入分母）。判定形状一律是「在**合并后的消费者源码**里找成员名」。
+import _consumers as _CONSUMERS
+
+_CFILES = _CONSUMERS.files()        # {相对路径: 文本}
+_CHAVE = bool(_CFILES)              # 有没有扫到消费者
+_CMERGED = _CONSUMERS.merged()      # 所有消费者源码拼成的一段文本
+_CCODE = strip_comments(_CMERGED)   # 同上，已剔注释（反向断言用这个）
+
+
+def skip(msg):
+    """消费者缺失时**跳过**（不算失败、不计入分母）—— 硬要求。"""
+    out.append("  [SKIP] " + msg)
+
+
 # ---------------------------------------------------------------- 1. 数据源纪律
 out.append("1) 数据源纪律（不得用 storage.items 取数据）")
 hits = re.findall(r"Storage\.items|Storage\s*\.\s*items", all_src)
@@ -618,15 +636,12 @@ else:
     err("`LastOpenReject` 没有宿主侧出口 —— 公开属性会读到 null")
 
 # 外部消费者必须**真的用上**（编译期即约束 —— 坑 #45 的成因就是"公开面没人验证"）
-_brt31 = ""
-_brp31 = os.path.join(GAME, "CustomUIBridge-Source", "CustomUIBridge.cs")
-if os.path.exists(_brp31):
-    with io.open(_brp31, "r", encoding="utf-8", errors="ignore") as f31:
-        _brt31 = f31.read()
-if "StorageUiPanels.Detach(" in _brt31 and "StorageUiPanels.LastOpenReject" in _brt31:
-    ok("接入自检真的调用了这两个新公开面（编译通过 = 外部可用）")
+if not _CHAVE:
+    skip("没扫到外部消费者 —— 跳过「新公开面有没有人从外部用」")
+elif "StorageUiPanels.Detach(" in _CMERGED and "StorageUiPanels.LastOpenReject" in _CMERGED:
+    ok("外部消费者真的调用了这两个新公开面（编译通过 = 外部可用）")
 else:
-    err("桥接没用新公开面 —— 它的外部可用性没人验证")
+    err("没有外部消费者用到新公开面 —— 它的外部可用性没人验证")
 
 # ------------------------------------------------- 6. 生命周期对称
 out.append("")
@@ -3415,15 +3430,12 @@ else:
         ok("`RegionOrderAboveStorage` 的注释点明了参照物是「**箱内物品**（我们自己的主面板）」")
     else:
         err("顺序常量的注释没说清参照物 —— 「之上」会被读成「排到原版网格上方」（用户实测误读过）")
-    _brp = os.path.join(GAME, "CustomUIBridge-Source", "CustomUIBridge.cs")
-    _br_raw = ""
-    if os.path.exists(_brp):
-        with io.open(_brp, "r", encoding="utf-8", errors="ignore") as _bf:
-            _br_raw = _bf.read()
-    if "（栈内：主面板之上）" in _br_raw and "整栈在原版网格下" in _br_raw:
-        ok("接入自检状态行写清了参照物（`栈内：主面板之上` + 并存时补 `整栈在原版网格下`）")
+    if not _CHAVE:
+        skip("没扫到外部消费者 —— 跳过「状态行有没有写清参照物」")
+    elif "（栈内：主面板之上）" in _CMERGED and "整栈在原版网格下" in _CMERGED:
+        ok("外部消费者状态行写清了参照物（`栈内：主面板之上` + 并存时补 `整栈在原版网格下`）")
     else:
-        err("接入自检状态行只写「之上/之下」—— 玩家会把参照物读成原版网格（用户实测误读过）")
+        err("外部消费者状态行只写「之上/之下」—— 玩家会把参照物读成原版网格（用户实测误读过）")
 
     # ---- 14.9s 就地取回（★ 26.10.3.69：`StorageUiPanels.TryTakeToBackpackFrom`）----
     #   ★★ 这是**唯一碰"防刷物品"红线**的公开面 ⟹ 四条缺一不可：
@@ -3509,11 +3521,9 @@ else:
     #     旧格式 `26.10.3.71` 的第三段既不像日期也不像序号，人一眼看不出对错 ⟹ 迟早对不齐。
     #   ⚠ 判据**不能锁"等于今天"** —— 版本号是**发布时**才改的，隔天没发版不该报红。
     #     所以锁的是：**4 段** + **前 3 段构成合法日期** + **不晚于今天** + **第 4 段 ≥ 1**。
-    _br_path = os.path.join(GAME, "CustomUIBridge-Source", "CustomUIBridge.cs")
-    _ver_srcs = [("CustomUI.cs", src.get("CustomUI.cs", "")), ("接入自检 CustomUIBridge.cs", "")]
-    if os.path.exists(_br_path):
-        with io.open(_br_path, "r", encoding="utf-8", errors="ignore") as _bf:
-            _ver_srcs[1] = ("接入自检 CustomUIBridge.cs", _bf.read())
+    #   ⚠ 这里只查**本仓库自己**的版本号真源（`CustomUI.cs` 的 [BepInPlugin] 第三参数）。
+    #     外部消费者各自的版本号是**别人家的事** —— 那一半判据整段删除（不在本仓库门禁内）。
+    _ver_srcs = [("CustomUI.cs", src.get("CustomUI.cs", ""))]
     _today = datetime.date.today()
     for (_tag, _txt) in _ver_srcs:
         _m = re.search(r'BepInPlugin\(\s*"[^"]*"\s*,\s*"[^"]*"\s*,\s*"([0-9][0-9.]*)"', _txt)
@@ -3708,19 +3718,14 @@ else:
         else:
             err("没有公开结构体 StorageBlueprintViewInfo —— 快照类型拿不到，等于没公开")
 
-        # 接入自检要真的读它（同坑 #45/#49：公开面没人从外部用 → 等于没公开）。
-        # ⚠ 这里**就地读**接入自检源码：`br` 变量要到第 22 节才赋值，本节（14）用不了。
-        #   ⚠ 文件不存在时**必须 err**（WARN = 静默跳过 = 等于没这条判据）。
-        _brpath = os.path.join(GAME, "CustomUIBridge-Source", "CustomUIBridge.cs")
-        if not os.path.exists(_brpath):
-            err("找不到接入接入自检 " + _brpath + " —— 这条判据没法验（别静默跳过）")
+        # 外部消费者要真的读它（同坑 #45/#49：公开面没人从外部用 → 等于没公开）。
+        # ⚠ 消费者缺失时**跳过**（外部使用者没有消费者目录，不该因此报 FAIL）。
+        if not _CHAVE:
+            skip("没扫到外部消费者 —— 跳过「公开面有没有人从外部钉住」")
+        elif "StorageBlueprintView.Current" in _CCODE:
+            ok("外部消费者在运行期读蓝图配置快照（新公开面有人从外部钉住）")
         else:
-            with io.open(_brpath, "r", encoding="utf-8", errors="ignore") as f:
-                _brloc = strip_comments(f.read())
-            if "StorageBlueprintView.Current" in _brloc:
-                ok("接入自检在运行期读蓝图配置快照（新公开面有人从外部钉住）")
-            else:
-                err("接入自检没读 StorageBlueprintView.Current —— 新公开面没人从外部验证")
+            err("没有外部消费者读 StorageBlueprintView.Current —— 新公开面没人从外部验证")
 
 # ---------------------- 15. 常驻面板（只藏不拆）与接管回退链
 out.append("")
@@ -4215,29 +4220,14 @@ else:
     else:
         err("[Blueprint] ConsumeFromBox 默认值不是 true 或没接上配置")
 
-# ------------- 17. PluginManager（插件管理）标签与配置热生效
+# ------------- 17. 插件管理器标签与配置热生效
 out.append("")
 out.append("17) 插件管理标签 / 配置热生效")
 
 csfull = src.get("CustomUI.cs", "")
 
-# 17.0 先核对「标签约定」本身（PluginManager 只认字符串标签，没有类型级 API）
-upm = None
-for cand in ["PluginManager-Source", "UnturnedPluginManager", "UnturnedPlugins"]:
-    p = os.path.join(GAME, cand, "PluginManagerMod.cs") if cand != "UnturnedPlugins" else None
-    if p and os.path.exists(p):
-        upm = p
-        break
-if upm:
-    with io.open(upm, "r", encoding="utf-8", errors="ignore") as f:
-        ut = f.read()
-    if '"Unturned.Cycle"' in ut or "Unturned.Cycle" in ut:
-        ok("PluginManager 确实支持 Unturned.Cycle（点击循环切换标签）")
-    else:
-        err("PluginManager 里没有 Cycle 标签 —— 本节的接法前提不成立，需要重新侦察")
-else:
-    w("没找到 PluginManagerMod.cs，跳过标签约定的源码核对")
-
+# 17.0（已删）原来这里去**别的插件**的源码里核对它的标签约定 —— 那是别家插件自己的实现细节，
+#      公开仓库里不该出现；本插件只需保证自己用的是标准 `Unturned.Cycle` 标签即可。
 # 17.1 DefaultView 必须是「可点击循环切换」的形态
 dv = re.search(r"cfgDefaultView\s*=\s*Config\.Bind\([\s\S]{0,900}?\);", csfull)
 if dv is None:
@@ -4268,28 +4258,22 @@ else:
 
 shared_cat = re.findall(r'CatGeneral = "([^"]+)"', csfull)
 if shared_cat:
-    # 与同族插件用同一个分类名，才能归到同一个导航项下
-    sib = os.path.join(GAME, "SurroundingChestCraft-Source", "SurroundingChestCraft.cs")
-    if os.path.exists(sib):
-        with io.open(sib, "r", encoding="utf-8", errors="ignore") as f:
-            st = f.read()
-        if shared_cat[0] in st:
-            ok("分类名与同族插件一致（" + shared_cat[0] + "）→ 在插件管理里归到同一类")
-        else:
-            err("分类名 \"" + shared_cat[0] + "\" 与其它插件不一致 —— 各造一套分类名会让导航栏碎成一地")
+    # ⚠ 原来这里拿**同族插件的源码**去核对分类名一致 —— 那属于"别人家自己的文件"，
+    #   本仓库不认识任何外部插件 ⟹ 跨插件的那一半整段删除，只留「常量存在」。
+    ok("CatGeneral 分类名是个常量（" + shared_cat[0] + "）—— 判据里不点名别的插件")
 else:
     err("找不到 CatGeneral 常量")
 
 # 17.3 热生效：必须现读 ConfigEntry 并在变化时重新落地
 if re.search(r"SyncLiveConfig\(\);", csfull) and "private static void SyncLiveConfig()" in csfull:
-    ok("Update 里每帧比对配置（PluginManager 不回调插件，只能自己发现变化）")
+    ok("Update 里每帧比对配置（插件管理器 不回调插件，只能自己发现变化）")
 else:
     err("没有 SyncLiveConfig —— 在插件管理里改了配置不会生效（必须重启，等于没接上）")
 
 slc = fn_body(csfull, "private static void SyncLiveConfig(", "SyncLiveConfig")
 if slc is not None:
     if "cfgDefaultView.Value" in slc and "cfgEnabled.Value" in slc:
-        ok("热同步读的是 ConfigEntry.Value（PluginManager 改的就是内存里这个值）")
+        ok("热同步读的是 ConfigEntry.Value（插件管理器 改的就是内存里这个值）")
     else:
         err("SyncLiveConfig 没读 ConfigEntry.Value")
     if "ApplyDefaultView();" in slc:
@@ -5136,168 +5120,64 @@ for _kw in ("StorageBlueprintFilters", "IStorageUiRegion", "SetRegionOrder", "Re
     else:
         err("README 缺 " + _kw + " —— 这是给第三方插件用的公开 API，没文档等于没有")
 
-# -------------------- 22. 外部消费者（CustomUIBridge）—— 公开面真的接得上吗
+# -------------------- 22. 外部消费者 —— 公开面真的接得上吗
 out.append("")
-out.append("22) 外部插件接入自检（CustomUIBridge）")
+out.append("22) 外部插件接入自检（通用扫描，不点名任何插件）")
 
 # 为什么单开一节：CustomUI 的内置视图与宿主**同程序集**，能直接用 internal，
 # 所以"内置视图能跑"永远证明不了"公开面对外部可用"。
 # README 坑 #45 / #49 就是这类缺口（接口写好了、文档写了、第三方照着抄编译不过）。
-# CustomUIBridge-Source 是一个只引用 CustomUIMod.dll 的独立插件：
-#   它编译得过 == 公开面确实够用；它哪天编译不过 == 有人把公开面改坏了。
-BR = os.path.join(GAME, "CustomUIBridge-Source")
-BRCS = os.path.join(BR, "CustomUIBridge.cs")
-BRBAT = os.path.join(BR, "build.bat")
-BRRD = os.path.join(BR, "README.md")   # 接入自检自己那个仍叫 README.md
-
-if os.path.exists(BRCS):
-    with io.open(BRCS, "r", encoding="utf-8", errors="ignore") as f:
-        br = f.read()
-    ok("外部消费者插件存在（CustomUIBridge.cs，" + str(len(br.split("\n"))) + " 行）")
+#
+# ★ 通用扫描（用户 2026-10-12 定）：本仓库**不点名任何消费者插件**。
+#   消费者由环境变量 `CONSUMERS_DIR` 指过来（逗号分隔多目录，**不必复制**源码）；
+#   外部使用者不设它、也没有 ./consumers ⟹ 本节判据**全部 SKIP**（不算失败、不进分母）。
+#   判据形状一律是「在**合并后的消费者源码**里找成员名」—— 不关心是谁写的。
+if not _CHAVE:
+    skip("没扫到外部消费者（" + _CONSUMERS.summary() + "）—— 第 22 节判据全部跳过")
 else:
-    br = ""
-    err("找不到 CustomUIBridge-Source/CustomUIBridge.cs —— 公开面又没人从外部验证了")
+    ok("扫到外部消费者：" + _CONSUMERS.summary())
 
-# ⚠ 中转页（借道用的临时 Items）尺寸必须跟着物品走，不能"开大一点省事"。
-#   实测：接入自检写死 resize(32, 32) = 1024 格，接管前那一帧原版把右列画满了
-#   （用户报"一瞬间的超大箱子栏位"），借道没关干净时那一坨还会常驻背包界面。
-if br:
-    if re.search(r"resize\(\s*32\s*,\s*32\s*\)", br):
-        err("接入自检仍把中转页写死成 32×32 —— 会闪一帧原版超大网格")
+    # ---- (a) 公开面/机制必须被外部**真的用上**（只在合并源码里找成员名）----
+    # 状态查询面（26.10.3.37）：既是编译期约束（碰 internal 就编译不过），运行期也看得见。
+    _q4 = ("StorageUiPanels.IsOpen", "StorageUiPanels.ActiveProviderId",
+           "StorageUiPanels.IsRegionAttached(", "StorageUiPanels.CurrentVirtualTag")
+    _q4_miss = [t for t in _q4 if t not in _CCODE]
+    if not _q4_miss:
+        ok("外部消费者运行期读了状态查询面（IsOpen / ActiveProviderId / IsRegionAttached / CurrentVirtualTag）")
     else:
-        ok("中转页不再写死 32×32")
-    _pv = fn_body(br, "private void ProbeVirtual(", "Bridge.ProbeVirtual")
-    if _pv is not None and ("GetAsset()" in br or "Assets.find(EAssetType.ITEM" in br) and "size_x" in br:
-        # 取尺寸有两条正当写法：手里是 Item 就 GetAsset()，只有 id 就 Assets.find(ITEM, id)。
-        # ⚠ 判据别写死其中一种 —— 换合法写法就报假 FAIL（本项目已多次因"判据指向旧写法"误报）。
-        ok("中转页按资产尺寸开（Item 上没有 size_x，那是 ItemAsset 的字段）")
+        err("外部消费者没读全状态查询面（缺：" + "、".join(_q4_miss) + "）—— 这些公开面没人从外部验证")
+    _notice = ("StorageUiPanels.Notify(", "StorageUiPanels.CurrentNotice", "StorageUiPanels.ClearNotice(")
+    _notice_miss = [t for t in _notice if t not in _CCODE]
+    if not _notice_miss:
+        ok("外部消费者运行期跑了临时提示面（发 → 读回 → 收掉，三件都真调了）")
     else:
-        err("ProbeVirtual 没按物品尺寸开中转页")
-    # 一条消息只说一个原因（坑 #58）：GrabFromStorage 只返回 bool，
-    # 把"没找到"和"找到了但拖拽失败"混成一句 = 给排查留假线索。
-    if _pv is not None and "StillInRelayPage(" in _pv:
-        ok("接入自检先自查物品是否还在中转页，再决定报哪句话（两种失败不混报）")
+        err("外部消费者没跑全临时提示面（缺：" + "、".join(_notice_miss) + "）")
+    if "UsableAsContainer" in _CCODE and "WantsRegions" in _CCODE:
+        ok("外部消费者运行期读了语义化页面判据（UsableAsContainer / WantsRegions）")
     else:
-        err("ProbeVirtual 又用同一个 false 报两种原因了")
-    # ⑩ 状态查询面（26.10.3.37）：接入自检必须**真的读**这 4 个新公开面 ——
-    #   既是编译期约束（碰 internal 就编译不过），运行期还会显示在自检结果里。
-    _q = fn_body(br, "private void RunSelfCheck(", "Bridge.RunSelfCheck")
-    if _q is not None and "StorageUiPanels.IsOpen" in _q \
-            and "StorageUiPanels.ActiveProviderId" in _q \
-            and "StorageUiPanels.IsRegionAttached(" in _q \
-            and "StorageUiPanels.CurrentVirtualTag" in _q:
-        ok("接入自检运行期读了状态查询面（IsOpen / ActiveProviderId / IsRegionAttached / CurrentVirtualTag）")
-    else:
-        err("接入自检没读全状态查询面 —— 这 4 个新公开面又没人从外部验证了")
-    if _q is not None and "StorageUiPanels.Notify(" in _q \
-            and "StorageUiPanels.CurrentNotice" in _q \
-            and "StorageUiPanels.ClearNotice(" in _q:
-        ok("接入自检运行期跑了临时提示面（发 → 读回 → 收掉，三件都真调了）")
-    else:
-        err("接入自检没跑全临时提示面（Notify / CurrentNotice / ClearNotice）")
-    if _q is not None and "UsableAsContainer" in _q and "WantsRegions" in _q:
-        ok("接入自检运行期读了语义化页面判据（UsableAsContainer / WantsRegions）")
-    else:
-        err("接入自检没读语义化页面判据 —— 这 2 个新公开面又没人从外部验证了")
-    # ⚠ 「同一帧内完成」物理上看不见（坑 #53 的原话，坑 #65 又撞一次）——
-    #   接入自检必须**留一条**提示给宿主写标题栏：最后一次 Notify 要排在最后一次 ClearNotice 之后。
-    if _q is not None:
-        _ln = _q.rfind("StorageUiPanels.Notify(")
-        _lc = _q.rfind("StorageUiPanels.ClearNotice(")
-        if _lc < 0:
-            err("接入自检根本没调 ClearNotice —— 「收不掉」那条语义就没验")
-        elif _ln > _lc:
-            ok("接入自检留了一条提示给宿主写标题栏（不是发完当场清 —— 那样画面上看不见）")
-        else:
-            err("接入自检最后一次 Notify 之后又清了 —— 同一帧内完成，玩家根本看不到（坑 #53 / #65）")
-    # ⛔ 门禁：不许写死自检的分母。
-    #   坑 #53 = "把能算出来的数写死在标签里"；坑 #64 = 它的**注释版** ——
-    #   接入自检头注释写着"7 条断言"、实际早就是 12 条，照着它改验收项又错一轮。
-    #   ⟹ 只扫两处**当前状态**区：接入自检源码 + README §7。
-    #     （§8 坑表与 §10 历史区里引用当时日志的数字是**历史事实**，不能删也不该判违规。）
-    _rd22 = ""
-    _rp22 = os.path.join(HERE, "开发文档.md")
-    if os.path.exists(_rp22):
-        with io.open(_rp22, "r", encoding="utf-8") as f:
-            _rd22 = f.read()
-    _s7 = ""
-    _a7 = _rd22.find("## 7. 验收清单")
-    _b7 = _rd22.find("## 8. 坑清单")
-    if _a7 >= 0 and _b7 > _a7:
-        _s7 = _rd22[_a7:_b7]
-    _hardcoded = []
-    for _src, _nm in ((br, "CustomUIBridge.cs"), (_s7, "README §7")):
-        if not _src:
-            continue
-        for _mm in re.finditer(r"自检\s*\d+\s*/\s*\d+|断言\s*\d+\s*条|\d+\s*条断言", _src):
-            _hardcoded.append(_nm + "：" + _mm.group(0))
-    if not _hardcoded:
-        ok("没人写死自检的分母（分母是算出来的 —— 写死会随断言增减而腐烂，坑 #53 / #64）")
-    else:
-        err("有写死的自检分母/条数：" + " · ".join(_hardcoded[:5]) + "（坑 #53 / #64）")
-    # ⚠ 接入方自己清理中转页时必须**先 Untrack 再删**。
-    #   顺序反了 = 我们自己删的那一下被对账层看成"物品离开了中转页"，
-    #   扫不到任何页 → 报成"丢到地上" → 白扣一次账（凭空少一件，比多一件更难查）。
-    _srv = fn_body(br, "private bool ServeOne(", "Bridge.ServeOne")
-    if _srv is None:
-        err("找不到 ServeOne —— 桥接的模拟库存被改名了？")
-    elif "Untrack(" not in _srv:
-        err("ServeOne 没先 Untrack 就清中转页 —— 自我清理会被误报成丢到地上")
-    elif _srv.find("Untrack(") < _srv.find("ClearRelay("):
-        ok("ServeOne：先 Untrack 再 ClearRelay（自我清理不会被误判成丢物品）")
-    else:
-        err("ServeOne 里 ClearRelay 排在 Untrack 之前 —— 会白扣一次账")
-    # 扣账只认"落到玩家页 / 丢到地上"（取消与关界面丢弃不能扣）—— 守恒判据
-    _orr = fn_body(br, "private void OnRelayResolved(", "Bridge.OnRelayResolved")
-    if _orr is not None and "LandedOnPlayerPage" in _orr and "DroppedOnGround" in _orr \
-            and "stockLeft -=" in _orr:
-        ok("桥接按落点扣模拟库存（只有落到玩家页/丢地上才扣）")
-    else:
-        err("OnRelayResolved 没按落点扣账 —— 对账链在接入方这一侧断了")
+        err("外部消费者没读语义化页面判据 —— 这 2 个公开面又没人从外部验证了")
 
-if os.path.exists(BRBAT):
-    # ⚠ 必须以**二进制**读来查行尾：文本模式（通用换行）会把 \r\n 归一成 \n，
-    #   于是「是不是 CRLF」这条判据永远为假 —— 检查器自己错了，别去改业务文件。
-    with open(BRBAT, "rb") as f:
-        brbat_raw = f.read()
-    with io.open(BRBAT, "r", encoding="utf-8", errors="ignore") as f:
-        brbat = f.read()
-    if "CustomUIMod.dll" in brbat:
-        ok("桥接插件的 build.bat 引用 CustomUIMod.dll（编译期就是公开面约束）")
+    # ⚠ 反向断言先剔注释（本项目第五次提醒自己）。
+    if "StorageUiHost" in _CCODE:
+        err("外部消费者源码里出现 StorageUiHost（internal）—— 外部消费者不能走内部后门")
     else:
-        err("桥接插件没引用 CustomUIMod.dll —— 它就不再验证 CustomUI 的公开面")
-    n_crlf = brbat_raw.count(b"\r\n")
-    n_bare = brbat_raw.count(b"\n") - n_crlf
-    if n_crlf > 0 and n_bare == 0:
-        ok("桥接 build.bat 全 CRLF（%d 行，无裸 LF）" % n_crlf)
+        ok("外部消费者零 internal 访问（只用公开面）")
+    if "IStorageUiProvider" in _CCODE and "IStorageUiRegion" in _CCODE:
+        ok("外部消费者实现了两个公开接口")
     else:
-        err("桥接 build.bat 行尾不对：CRLF=%d 裸LF=%d（cmd 需要 CRLF）" % (n_crlf, n_bare))
-    # .bat 必须纯 ASCII：cmd 按控制台代码页（本机 GBK）读，中文 REM 可能吞掉行尾 CR
-    _nonascii = sum(1 for b in brbat_raw if b > 127)
-    if _nonascii == 0:
-        ok("桥接 build.bat 纯 ASCII（含中文会让 cmd 解析错位 —— 实测踩过，坑 #52）")
+        err("外部消费者没实现公开接口 —— 那它就没在验证接入面")
+    _iface_miss = [m for m in ("public bool WantsRegion(", "public int RegionOrder(",
+                               "public ISleekElement RegionPanel(") if m not in _CCODE]
+    if not _iface_miss:
+        ok("区块三件套在外部程序集里可实现（WantsRegion / RegionOrder / RegionPanel）")
     else:
-        err("桥接 build.bat 里有 %d 个非 ASCII 字节 —— cmd 按 GBK 读 .bat，REM 里的中文可能吞掉行尾")
-else:
-    err("找不到桥接插件的 build.bat")
+        err("外部消费者缺区块成员：" + "、".join(_iface_miss))
+    # 常驻纪律同样适用于第三方：只藏不拆
+    if "panel.IsVisible = false" in _CCODE and "RemoveChild(panel)" in _CCODE:
+        ok("外部消费者自己遵守「只藏不拆」（关掉时藏，丢弃时才 RemoveChild）")
+    else:
+        err("外部消费者的常驻策略没写对 —— 第三方照它抄就会每次重开箱子重载图标")
 
-if br:
-    # ⚠ 反向判据先剔注释（本项目第五次提醒自己）
-    brc = strip_comments(br)
-    if "StorageUiHost" in brc:
-        err("桥接源码里出现 StorageUiHost（internal）—— 外部消费者不能走内部后门")
-    else:
-        ok("桥接源码零 internal 访问（只用公开面）")
-    if "IStorageUiProvider" in brc and "IStorageUiRegion" in brc:
-        ok("桥接实现了两个公开接口")
-    else:
-        err("桥接没实现公开接口 —— 那它就没在验证接入面")
-    for _m in ("public bool WantsRegion(", "public int RegionOrder(",
-               "public ISleekElement RegionPanel("):
-        if _m in brc:
-            ok("区块三件套在外部程序集里可实现：" + _m.split()[1].split("(")[0])
-        else:
-            err("桥接缺区块成员 " + _m)
     # 每个公开入口都要被真调用过（否则那条路等于没验证）
     CALLS = [
         ("StorageUiRegistry.Register", "注册区块"),
@@ -5326,71 +5206,33 @@ if br:
         ("StorageUiContext", "上下文类型"),
         ("[BepInDependency(", "声明依赖 CustomUI"),
     ]
-    _missing = [lbl for api, lbl in CALLS if api not in brc]
+    _missing = [lbl for api, lbl in CALLS if api not in _CCODE]
     if _missing:
-        err("桥接没覆盖这些公开面：" + "、".join(_missing))
+        err("外部消费者没覆盖这些公开面：" + "、".join(_missing))
     else:
-        ok("公开面 25 项全部被外部插件真实调用（含常量与门面）")
-    # 常驻纪律同样适用于第三方：只藏不拆
-    if "panel.IsVisible = false" in brc and "RemoveChild(panel)" in brc:
-        ok("桥接自己遵守「只藏不拆」（Close 里藏，丢弃时才 RemoveChild）")
-    else:
-        err("桥接的常驻策略没写对 —— 第三方照它抄就会每次重开箱子重载图标")
-    if "DiscardPark();" in brc:
-        ok("桥接在 Open 失败路径上自己拆半成品（宿主不会调它的 Close）")
-    else:
-        err("桥接没处理 Open 失败 —— 违反 IStorageUiProvider 的接入约定")
-    if "SelfCheckSource" in brc and "FilterSource" in brc:
-        ok("自检与配置用两个不同的过滤器来源名（自检不会撤掉用户配置的过滤器）")
-    else:
-        err("自检与配置共用来源名 —— 跑一次自检就把玩家的配置效果清掉了")
-    if "BlueprintRegionId" not in brc:
-        err("桥接里内置区块 Id 是散落的字面量 —— CustomUI 改名时它不会跟着报")
+        ok("公开面 %d 项全部被外部插件真实调用（含常量与门面）" % len(CALLS))
 
-    # 用户实测报「自检 7/9 有错误」，实际是 7 项全过、分母写死了（坑 #53）
-    if '"/9' in brc or "（9 项）" in brc:
-        err("桥接的自检分母还是写死的 9 —— 项数一变就把「全过」显示成「有错误」")
-    elif "ref int total" not in brc or "total++" not in brc:
-        err("自检分母没有现算（Append 里应当 total++）—— 同上，标签会与实际项数漂移")
+    # ⛔ 门禁：不许写死自检的分母（坑 #53 = 把能算出来的数写死在标签里；坑 #64 = 它的注释版）。
+    #   ⚠ 只扫**本仓库自己的**当前状态区（README §7）—— §8 坑表与 §10 历史区里引用当时
+    #     日志的数字是**历史事实**，不能删也不该判违规；外部消费者自己的分母是别人家的事。
+    _rd22 = ""
+    _rp22 = os.path.join(HERE, "开发文档.md")
+    if os.path.exists(_rp22):
+        with io.open(_rp22, "r", encoding="utf-8") as f:
+            _rd22 = f.read()
+    _s7 = ""
+    _a7 = _rd22.find("## 7. 验收清单")
+    _b7 = _rd22.find("## 8. 坑清单")
+    if _a7 >= 0 and _b7 > _a7:
+        _s7 = _rd22[_a7:_b7]
+    _hardcoded = []
+    if _s7:
+        for _mm in re.finditer(r"自检\s*\d+\s*/\s*\d+|断言\s*\d+\s*条|\d+\s*条断言", _s7):
+            _hardcoded.append("README §7：" + _mm.group(0))
+    if not _hardcoded:
+        ok("README §7 没写死自检的分母（分母是算出来的 —— 写死会随断言增减而腐烂，坑 #53 / #64）")
     else:
-        ok("自检分母现算（Append 里 total++），标签不会与实际项数漂移")
-    # 「外部改宿主布局」必须有一个**跨帧存活**的开关才看得见；
-    # 自检那项设完当场撤销，同一帧内宿主根本没机会重排（坑 #53 第二条）
-    if "pinnedDown" in brc and "PIN_DOWN_ORDER" in brc and "TogglePinnedDown" in brc:
-        ok("有「把我挪到最下面」这种留状态的按钮（外部改布局才能被肉眼看到）")
-    else:
-        err("缺跨帧的顺序覆盖按钮 —— 验收项「看着它跳」物理上不可能成立")
-    # 接入自检值不能与玩家开关用的值撞车（撞了会把玩家的 pin 解掉并误判 FAIL）
-    if "before >= PIN_DOWN_ORDER ? -950 : PIN_DOWN_ORDER" in brc and \
-            "if (pinnedDown) StorageUiRegistry.SetRegionOrder(Id, PIN_DOWN_ORDER);" in brc:
-        ok("自检接入自检避开 pin 值，且撤接入自检后还原玩家自己的开关状态")
-    else:
-        err("自检的顺序接入自检会踩掉玩家的 pin（症状：点完自检摆放就复位 + 误报 FAIL）")
-
-    # 文档：桥接的 README + CustomUI 侧的指路
-    if os.path.exists(BRRD):
-        with io.open(BRRD, "r", encoding="utf-8") as f:
-            brrd = f.read()
-        if "CustomUIBridgeMod.dll" in brrd and "接入自检" in brrd:
-            ok("桥接 开发文档 写了产物与自检")
-        else:
-            err("桥接 README 缺产物名或自检说明")
-        if "未实测" in brrd or "未验证" in brrd:
-            ok("桥接 README 标了未实测项（不把推测写成结论）")
-        else:
-            w("桥接 README 没标未实测项 —— 运行时还没跑过就该写清楚")
-    else:
-        err("缺桥接 README（范例价值 = 没有）")
-
-    _rt = ""
-    _rtp = os.path.join(HERE, "开发文档.md")
-    if os.path.exists(_rtp):
-        with io.open(_rtp, "r", encoding="utf-8") as f:
-            _rt = f.read()
-    if "CustomUIBridge" in _rt:
-        ok("CustomUI README 指路到外部消费者插件")
-    else:
-        err("CustomUI README 没提桥接插件 —— 别人不知道有现成范例可抄")
+        err("README §7 有写死的自检分母/条数：" + " · ".join(_hardcoded[:5]) + "（坑 #53 / #64）")
 
 # -------------------- 23. 公开的网格组件（StorageGridPanel，B1）
 out.append("")
@@ -5514,15 +5356,12 @@ else:
         ok("public 签名不泄漏 internal 类型（ItemGroup 只留在内部）")
 
     # 外部消费者要真的用上它
-    _brt = ""
-    _brp = os.path.join(GAME, "CustomUIBridge-Source", "CustomUIBridge.cs")
-    if os.path.exists(_brp):
-        with io.open(_brp, "r", encoding="utf-8", errors="ignore") as f:
-            _brt = f.read()
-    if "StorageGridPanel" in _brt:
-        ok("桥接插件用上了公开网格组件（外部可用性被真实调用）")
+    if not _CHAVE:
+        skip("没扫到外部消费者 —— 跳过「公开网格组件有没有被外部用上」")
+    elif "StorageGridPanel" in _CMERGED:
+        ok("外部消费者用上了公开网格组件（外部可用性被真实调用）")
     else:
-        err("桥接插件没用 StorageGridPanel —— 组件的外部可用性没人验证（坑 #45 的成因）")
+        err("没有外部消费者用 StorageGridPanel —— 组件的外部可用性没人验证（坑 #45 的成因）")
 
     _rt23 = ""
     _rp23 = os.path.join(HERE, "开发文档.md")
@@ -5613,15 +5452,8 @@ else:
     else:
         ok("网格/列表组件在「拆面板 / 改版面」时先记滚动位置，挂载后写回（且写回有帧数上限）")
 
-    # ---- ★ 26.10.3.47：接入自检的四个演示区块必须**默认关闭**（正式版不该挂测试内容）----
-    _brc = strip_comments(br)   # ⚠ 第 22 节已读过接入自检源码（`br` 在本文之前定义）
-    _br_on = re.findall(r'Config\.Bind\("Bridge",\s*"(ShowRegion|ShowBackpackGrid|'
-                        r'ShowFlatSlots|ShowListPanel)",\s*true', _brc)
-    if _br_on:
-        err("接入自检的演示区块又被默认打开了：" + "、".join(sorted(set(_br_on))) +
-            " —— 正式版打开箱子时右侧不该多出测试内容（用户 2026-10-08 明确）")
-    else:
-        ok("接入自检的四个演示区块默认关闭（验收时到 cfg 里打开，不改代码）")
+    # ⚠ 原来这里查「外部消费者的四个演示区块默认关闭」（读别人家插件的 cfg 绑定）——
+    #   那属于"别人家自己的文件"，判据整段删除（不在本仓库门禁内）。
 
     _m27_empty = re.search(
         r"if \(count == 0\)([\s\S]{0,900}?)else if \(emptyLabel != null\)", _k27)
@@ -5696,14 +5528,17 @@ else:
     #     本来就会重建），证明不了"数据一个字节没变、只改旋钮也生效" —— 而那正是本轮修的。
     #   ⚠ 入口演示的是**接入方真会做的事**（改 Title / 清空自己的数据源），
     #     不是"挑一个刚好能看出变化的旋钮"（用户 2026-10-05 明确否掉了拿 Columns 充数）。
-    if "grid.OnSlotClicked" in _brt and "BridgeGridRegion" in _brt:
-        ok("接入自检给「二维 Items 源 + 回调」挂了真回调（§7 第 181 条的验收入口）")
+    if not _CHAVE:
+        skip("没扫到外部消费者 —— 跳过「验收入口」两条")
     else:
-        err("桥接没挂二维源的回调 —— §7 第 181 条将无从验证")
-    if "ToggleKnobs" in _brt and "Grid.Title" in _brt and "SetDataCleared" in _brt:
-        ok("桥接有个能当场改旋钮的按钮（§7 第 179/180 条的验收入口）")
-    else:
-        err("桥接没有「界面开着改旋钮」的入口 —— §7 第 179/180 条证不了它们该证明的事")
+        if "grid.OnSlotClicked" in _CMERGED and "OnSlotRightClicked" in _CMERGED:
+            ok("外部消费者给「二维 Items 源 + 回调」挂了真回调（§7 第 181 条的验收入口）")
+        else:
+            err("没有外部消费者挂二维源的回调 —— §7 第 181 条将无从验证")
+        if "Grid.Title" in _CMERGED:
+            ok("外部消费者有个能当场改公开旋钮的入口（§7 第 179/180 条的验收入口）")
+        else:
+            err("没有外部消费者在界面开着时改旋钮 —— §7 第 179/180 条证不了它们该证明的事")
 
     # ---- ★ 26.10.3.29：搜索栏（T4/T5）—— 那个零调用者的半成品终于接线了 ----
     # 交接文档第四十二轮留的话：「`MatchesQuery` 现在**零调用者**，接上才有效果」。
@@ -6054,79 +5889,21 @@ else:
     err("Jars 暴露成 public 了 —— 外部能直接改内部列表")
 
 # 外部消费者真的按"下游形态"用它（交 Item，不是 jar）
-_brf = ""
-_brfp = os.path.join(GAME, "CustomUIBridge-Source", "CustomUIBridge.cs")
-if os.path.exists(_brfp):
-    with io.open(_brfp, "r", encoding="utf-8", errors="ignore") as f:
-        _brf = f.read()
-    _brfc = strip_comments(_brf)
-    if "new StorageSlotList()" in _brfc and "slots.Add(jar.item)" in _brfc:
-        ok("桥接按下游形态交数据（一串 Item，不是 jar）—— 扁平入口对外真的可用")
-    else:
-        err("桥接没用扁平入口（或交的是 jar）—— E'-1 的外部可用性没人验证")
-    if "grid.Refresh(slots)" in _brfc:
-        ok("桥接调了 Refresh(StorageSlotList)")
-    else:
-        err("桥接没走 Refresh(StorageSlotList) 这条路径")
-    if "slots.CapacityCells = FakeCapacityCells" in _brfc:
-        ok("桥接给了总格数（扁平模型的容量语义）")
-    else:
-        err("桥接没设 CapacityCells —— 头部占用统计会缺分母")
-
-    # ★ 26.10.3.62：四个演示块的 y 必须**统一从 `BlockTopY` 取**（高度清单只有一处真源）。
-    #   ⚠ 本轮实测就踩了「清单写两处」：加了「右键菜单块」后 `PanelHeight()` 算上了它、
-    #     而**下拉块的 y 没跟着下移** ⟹ 两个标题画在同一行、字叠在一起（用户截图）。
-    #     这类 bug 只在**新增块**那一次暴露 ⟹ 用判据把它钉死：块 y 只能走 `BlockTopY`。
-    #   ★ 26.10.3.64：块数 4 → 5（新增「彩绘面板块」）—— 判据里的数目要跟着数（别写死过期数）。
-    _btY = len(re.findall(r"float y = BlockTopY\(\d+\);", _brfc))
-    _bh = re.search(r"BlockHeights\(\)\s*\{\s*return new float\[\]\s*\{([\s\S]*?)\}", _brfc)
-    _need = ["IconBlockHeight()", "BarBlockHeight()", "MenuBlockHeight()",
-             "SurfaceBlockHeight()", "DropdownBlockHeight()"]
-    _bhOk = bool(_bh) and all(n in _bh.group(1) for n in _need) \
-        and len(re.findall(r"BlockHeight\(\)", _bh.group(1))) == 5
-    _oldY = len(re.findall(r"y \+= (?:Icon|Bar|Menu|Surface|Dropdown)BlockHeight\(\) \+ 4f;", _brfc))
-    if _btY == 5 and _bhOk and _oldY == 0:
-        ok("五个演示块的 y 都从 `BlockTopY` 取（高度清单**只有一处真源** —— 加块不会再错位）")
-    else:
-        err("演示块的 y 还在各算一遍（BlockTopY=%d / 清单齐=%s / 旧写法残留=%d）"
-            "—— 加一块就必然错位（本轮实测踩过）" % (_btY, _bhOk, _oldY))
-    # ⚠ 自检的语义是「公开面能不能用」，不是「这块区域现在有没有显示」：
-    #   被配置关掉的区域必须走 SKIP（且不计入分母），否则关掉开关就永远拿不到全过（坑 #57）
-    if "private static void Skip(" in _brfc and "Skip(sb," in _brfc:
-        ok("自检支持 SKIP（被配置关掉的判据不算失败）")
-    else:
-        err("自检没有 SKIP 语义 —— 关掉 ShowBackpackGrid 就会报 8/9 假故障")
-    if "if (!CustomUIBridgePlugin.ShowGrid)" in _brfc and \
-            "if (!CustomUIBridgePlugin.ShowFlatGrid)" in _brfc:
-        ok("两条区域判据都先看配置开关再判定")
-    else:
-        err("区域判据没尊重配置开关")
-    # Skip 只许打标记、不许加分母
-    _skip_body = ""
-    _skm = re.search(r"private static void Skip\([^)]*\)\s*\{([\s\S]*?)\n        \}", _brf)
-    if _skm is not None:
-        _skip_body = _skm.group(1)
-    if _skip_body and "total" not in strip_comments(_skip_body) \
-            and "pass" not in strip_comments(_skip_body):
-        ok("Skip 不加 total/pass（分母只算真正判定的项）")
-    elif not _skip_body:
-        err("取不到 Skip 的函数体（签名或缩进变了，判据要跟）")
-    else:
-        err("Skip 里动了分母或计数 —— 跳过的项还在污染结果")
-    # 失败消息不许把两种原因揉成一句（"未建好/无数据源"这次就查不出真因，只能去读 cfg）
-    # ⚠ 必须查**剔注释后**的源码：解释这条坑的注释里正好引用了那句坏消息（第八次踩同一条）。
-    if "未建好/无数据源" in _brfc:
-        err("自检消息还把两种原因揉成一句 —— 报出来也看不出真因")
-    else:
-        ok("自检把「面板未建」与「无数据源/槽位为空」分开报（可直接定位）")
-
-    # 超额显示：占用 > 容量时必须显眼标出来，不许长得像正常数字
-    if _flat_head is not None and "超出容量" in _flat_head:
-        ok("扁平头部在占用超过容量时明确标注（不藏接入方数据层的真实异常）")
-    else:
-        err("扁平头部不标超额 —— `12/8` 这种数字看着像 UI 算错了")
+if not _CHAVE:
+    skip("没扫到外部消费者 —— 跳过「扁平槽位入口有没有被外部用上」")
 else:
-    err("找不到桥接源码，无法验证扁平入口的外部可用性")
+    if "new StorageSlotList()" in _CCODE and "slots.Add(jar.item)" in _CCODE:
+        ok("外部消费者按下游形态交数据（一串 Item，不是 jar）—— 扁平入口对外真的可用")
+    else:
+        err("没有外部消费者用扁平入口（或交的是 jar）—— E'-1 的外部可用性没人验证")
+    if "grid.Refresh(slots)" in _CCODE:
+        ok("外部消费者调了 Refresh(StorageSlotList)")
+    else:
+        err("没有外部消费者走 Refresh(StorageSlotList) 这条路径")
+    if re.search(r"CapacityCells\s*=", _CCODE):
+        ok("外部消费者给了总格数（扁平模型的容量语义）")
+    else:
+        err("没有外部消费者设 CapacityCells —— 头部占用统计会缺分母")
 
 _rt24 = ""
 _rp24 = os.path.join(HERE, "开发文档.md")
@@ -6138,935 +5915,233 @@ if os.path.exists(_rp24):
     else:
         err("README 缺 StorageSlotList —— 下游那边不知道该怎么交数据")
 
-# -------------------- 25. 下游接入（E'-2：真实外部消费者 + 软依赖隔离）
+# -------------------- 25. 下游接入（E'-2：外部消费者的依赖声明）
 out.append("")
 out.append("25) 下游接入 CustomUI（E'-2）")
 
-IND = os.path.join(GAME, "Industrial-Source")
-IND_MAIN = os.path.join(IND, "Industrial.cs")
-IND_BRIDGE = os.path.join(IND, "Industrial.CustomUi.cs")
-
-if not os.path.exists(IND_BRIDGE):
-    err("缺 Industrial.CustomUi.cs —— 下游侧接入没落地")
+# ★ 通用扫描（用户 2026-10-12 定）：本仓库**不点名任何下游插件**，也**不检查
+#   「别人家插件自己的文件」** —— 那一族判据（外部 build.bat 的行尾 CRLF / 非 ASCII 字节 /
+#   源文件清单、外部主文件必须零引用 CustomUI 类型的代码隔离、外部 README 的指路、
+#   别处内容包 Sandbox/… 的不可堆叠不变量）**已整段删除**：它们本就不该出现在这个仓库里。
+#   这里只留本仓库该管的事：① 依赖方向与消费者是否存在（缺失 ⟹ SKIP）；
+#   ② 依赖声明（外部项目必须声明 `[BepInDependency("<本插件 GUID>")]`）。
+if not _CHAVE:
+    skip("没扫到外部消费者 —— 跳过下游接入判据（" + _CONSUMERS.summary() + "）")
 else:
-    with io.open(IND_BRIDGE, "r", encoding="utf-8", errors="ignore") as f:
-        indbr = f.read()
-    with io.open(IND_MAIN, "r", encoding="utf-8", errors="ignore") as f:
-        indmain = f.read()
-    br_code = strip_comments(indbr)
-    main_code = strip_comments(indmain)
-
     # ---- 依赖声明 ----
-    # ★ 26.10.12.3：GUID 改成了 `com.35117.customui` ⟹ 判据**从真源读 GUID**，
-    #   别再硬编码第二份（GUID 一改就得记得改判据 —— 正是"同一事实写两处"那条坑）。
+    # ★ GUID **从真源读**（`CustomUI.cs` 的 [BepInPlugin] 第一参数），绝不硬编码第二份
+    #   （同一事实写两处 = 迟早漂，见坑 #67 那一族）。
     _guid_m = re.search(r'BepInPlugin\(\s*"([^"]+)"', src.get("CustomUI.cs", ""))
-    _guid = _guid_m.group(1) if _guid_m else "com.35117.customui"
-    if re.search(r'\[BepInDependency\("' + re.escape(_guid) + r'",\s*'
-                 r'BepInDependency\.DependencyFlags\.SoftDependency\)\]', main_code):
-        ok("下游声明了对 CustomUI 的**软**依赖（没装也必须能跑，所以不能是硬依赖）")
+    _guid = _guid_m.group(1) if _guid_m else None
+    if not _guid:
+        err("读不出本插件的 GUID（[BepInPlugin] 第一参数）—— 依赖声明判据失效，别静默跳过")
     else:
-        err("下游没声明软依赖 CustomUI")
+        _refs = _CONSUMERS.referencing(_guid)
+        if not _refs:
+            err("没有任何消费者引用本插件 GUID（" + _guid + "）—— 依赖方向也没人从外部钉住")
+        else:
+            _dep = [k for k, v in _refs.items()
+                    if re.search(r'\[BepInDependency\(\s*"' + re.escape(_guid) + r'"', v)]
+            _soft = [k for k, v in _refs.items()
+                     if re.search(r'\[BepInDependency\(\s*"' + re.escape(_guid) + r'"\s*,\s*'
+                                  r'BepInDependency\.DependencyFlags\.SoftDependency\s*\)\]', v)]
+            if _dep:
+                ok("外部消费者声明了对本插件的依赖：" + "、".join(sorted(_dep)))
+            else:
+                err("引用本插件 GUID 的消费者里没有一条 [BepInDependency] —— 依赖声明缺失")
+            if _soft:
+                ok("软依赖：至少一个消费者把本插件声明成 SoftDependency（没装也必须能跑）")
+            else:
+                err("没有消费者把本插件声明成 SoftDependency —— 硬依赖会让没装本插件的玩家直接报错")
 
-    # 方向铁律：CustomUI 是前置，不许认识下游
-    cu_all = "".join([src.get(f, "") for f in FILES])
-    cu_code = strip_comments(cu_all)
-    if "Industrial" in cu_code or "com.trae.industrial" in cu_code:
-        err("CustomUI 侧出现了下游的名字 —— 依赖方向反了（前置不认识上层，见 README §1）")
+    # ---- 方向铁律：本插件是**前置**，不许认识下游 ----
+    #   判据**不写死下游名字**：拿扫到的消费者文件名（去扩展名）当探针 ——
+    #   它们出现在本插件**代码**里就是依赖方向反了（注释里提一句不算，所以先剔注释）。
+    _cu_code = strip_comments("".join(src.get(f, "") for f in FILES))
+    _stems = sorted(set(os.path.splitext(os.path.basename(p))[0] for p in _CFILES
+                        if len(os.path.splitext(os.path.basename(p))[0]) >= 6))
+    _leaked = [s for s in _stems if s in _cu_code]
+    if _leaked:
+        err("本插件代码里出现了消费者的名字：" + "、".join(_leaked) +
+            " —— 依赖方向反了（前置不认识上层，见 README §1）")
     else:
-        ok("依赖方向仍是单向：CustomUI 不认识下游（前置定位没破）")
+        ok("依赖方向仍是单向：本插件不认识下游（前置定位没破）")
 
-    # ---- ★ 软依赖下的类型隔离（缺一条，没装 CustomUI 的玩家就会炸在 Awake）----
-    if "[MethodImpl(MethodImplOptions.NoInlining)]" in br_code and \
-            "internal static void InstallNow(" in br_code:
-        ok("隔离③ InstallNow 标了 NoInlining（被内联进 Awake = 让 Awake 去解析桥接类型）")
+    # ---- (a) 本插件为下游这种数据模型准备的公开入口，必须真的被外部用上 ----
+    if "new StorageSlotList()" in _CCODE and "grid.Refresh(slots)" in _CCODE:
+        ok("外部消费者用**扁平槽位入口**（一串 Item + 总格数）—— 公开面真的可用")
     else:
-        err("InstallNow 没有 NoInlining —— 隔离不成立，没装 CustomUI 会 TypeLoadException")
-
-    _integ = re.search(r"internal static class CustomUiIntegration\s*\{([\s\S]*?)\n    \}", br_code)
-    if _integ is None:
-        err("取不到 CustomUiIntegration 的类体（改名或缩进变了）")
-    else:
-        _ib = _integ.group(1)
-        if re.search(r"class CustomUiIntegration\s*\{", _ib.join([""])) or \
-                "class CustomUiIntegration:" not in br_code.replace(" ", ""):
-            ok("隔离① CustomUiIntegration 不实现任何 CustomUI 接口（它一加载不会去解析 CustomUIMod）")
-        else:
-            err("CustomUiIntegration 实现了 CustomUI 接口 —— 类型加载就会要 CustomUIMod.dll")
-        _bad = re.search(r"(private|internal)\s+(static\s+)?(readonly\s+)?"
-                         r"(StorageGridPanel|StorageSlotList|StorageUiContext|"
-                         r"RelayResolvedHandler|IStorageUiProvider|IStorageUiRegion)\b", _ib)
-        if _bad:
-            err("CustomUiIntegration 里有 CustomUI 类型的字段：" + _bad.group(0))
-        else:
-            ok("CustomUiIntegration 没有 CustomUI 类型的字段（只放静态方法）")
-        if "Chainloader.PluginInfos" in _ib:
-            ok("HasCustomUi 只翻 BepInEx 插件清单做字符串比较，不碰 CustomUI 类型")
-        else:
-            err("HasCustomUi 的检测方式不对 —— 它必须在没有 CustomUI 时也能安全执行")
-
-    # 唯一引用 CustomUI 类型的地方就是桥接文件；主文件本体不许直接碰
-    _cu_names = ("StorageUiRegistry", "StorageGridPanel", "StorageSlotList",
-                 "IStorageUiRegion", "IStorageUiProvider", "StorageUiContext", "StorageUiPanels",
-                 "StorageUiRelay", "RelayResolved", "RelayFate", "RelayResolvedHandler")
-    _leak = [n for n in _cu_names if n in main_code]
-    if _leak:
-        err("Industrial.cs 本体直接引用了 CustomUI 类型：" + "、".join(_leak) +
-            " —— 主文件的方法也可能在无 CustomUI 时触发类型加载")
-    else:
-        ok("隔离①补 Industrial.cs 本体零 CustomUI 类型引用（全关在 Industrial.CustomUi.cs）")
-    if "using CustomUI;" in br_code:
-        ok("桥接文件用 typed 调用公开面（不是反射拼字符串 —— 编译期就能发现公开面被改坏）")
-    else:
-        err("桥接文件没 using CustomUI？那它靠什么调用公开面")
-
-    # ---- ★ 数字箱借道界面（2026-10-03：F 打开的是"左原版背包 + 右清单"）----
-    _td = re.search(r"internal static bool TryOpenDigitalBox\([\s\S]*?\n        \}", br_code)
-    if _td is None:
-        err("找不到 CustomUiIntegration.TryOpenDigitalBox —— F 键的借道路径没了")
-    else:
-        _tdb = _td.group(0)
-        _pre = br_code[:br_code.find("internal static bool TryOpenDigitalBox(")]
-        if "[MethodImpl(MethodImplOptions.NoInlining)]" in _pre[-200:]:
-            ok("隔离③补 TryOpenDigitalBox 也标了 NoInlining（内联进主循环 = 让主循环解析桥接类型）")
-        else:
-            err("TryOpenDigitalBox 没标 NoInlining —— 隔离不成立")
-        if "installed" in _tdb:
-            ok("TryOpenDigitalBox 先查 installed（没装 CustomUI 时绝不碰 DigitalBoxRegion）")
-        else:
-            err("TryOpenDigitalBox 没有 installed 守卫 —— 无 CustomUI 时会触发类型加载")
-
-    _f = re.search(r"TryOpenDigitalBox\(AimedNode, inst\)", main_code)
-    if _f is not None and "DigitalUI.OpenMain(AimedNode, inst)" in main_code:
-        ok("F 键：借道界面失败/不可用时**退回下游自绘旧界面**（软依赖下不能只有一条路）")
-    else:
-        err("F 键的退回路径不完整（借道打不开时玩家就没有任何数字箱界面了）")
-    # ⚠ 这条是本轮最容易漏的：JIT 在方法**首次被调用**时编译整个方法体，
-    #   那时就会解析体里引用的类型。TryOpenDigitalBox 引用了 DigitalBoxRegion
-    #   （实现 CustomUI 接口）⟹ 只要它被调用过一次，没装 CustomUI 就会 TypeLoadException。
-    #   NoInlining 只保证"不被内联进调用方"，**不保证"不被编译"** —— 必须在调用点上短路。
-    if re.search(r"customUiReady\s*&&\s*CustomUiIntegration\.TryOpenDigitalBox", main_code):
-        ok("借道入口在**调用点**上用 customUiReady 短路（没装 CustomUI 时那个方法永不 JIT）")
-    else:
-        err("TryOpenDigitalBox 没被 customUiReady 短路 —— 软依赖的类型隔离已被破坏，"
-            "没装 CustomUI 的玩家第一次按 F 会 TypeLoadException")
-    if "p.customUiReady = true" in br_code and "installed = true" in br_code:
-        ok("InstallNow 成功后同时置 installed 与 customUiReady（两个守卫同源，不会漂移）")
-    else:
-        err("InstallNow 没置 customUiReady —— 借道路径永远进不去（或反过来：守卫不同源）")
-
-    if "c.Tag is Session" in br_code:
-        ok("借道会话按 **ctx.Tag 里的 Session 对象**认领（两个插件都用虚拟存储时不会互相抢接管）")
-    else:
-        err("DigitalBoxRegion.CanHandle 没认 ctx.Tag 里的 Session —— 会抢别人的借道会话，或自己的被别人抢走")
-    # ⚠ 会话身份**绝不能存成静态/实例字段**：OpenVirtualStorage 内部会同步走
-    #   openTrunk →（若已开着别的箱子）closeStorage → Host.Close() → 我们的 Close()，
-    #   那一趟会把静态字段抹掉 ⟹ 随后 Open(ctx) 读到 null ⟹ 界面是空的。
-    #   实测指纹：从世界按 F 一切正常（没箱子开着、不走那条路），
-    #   而**从别的箱子的只读预览点进去**（§7 第 133 条）变成空界面 —— 只坏一条路径。
-    if "sessionDrop" in br_code or "SessionToken" in br_code:
-        err("下游又用字段存借道会话身份了（sessionDrop/SessionToken）—— 会被重入的 Close() 抹掉")
-    else:
-        ok("借道会话身份只经 ctx.Tag 传递，没有可被 Close 抹掉的字段")
-
-    _lift = re.search(r"private void Lift\(StorageSlotHit hit\)[\s\S]*?\n        \}", br_code)
-    if _lift is None:
-        err("找不到 Lift —— 借道界面的取物路径没实现")
-    else:
-        _lb = _lift.group(0)
-        if _lb.find("Track(") < _lb.find("GrabFromStorage(") and "return" in _lb:
-            ok("先 Track 再托起：登记失败就**不取**（否则落点不会被报告 = 凭空造物品）")
-        else:
-            err("Lift 里 Track/托起顺序或失败处理不对")
-        if "hit.Dragging" in _lb:
-            ok("手上托着东西时点格子什么都不做（2026-10-02 混用两套模型踩过的坑）")
-        else:
-            err("Lift 没判 hit.Dragging —— 会一次取出两件、鼠标上还挂着一件")
-        if "ChooseSource(shown, hit" in _lb:
-            # ⚠ 槽位身份核对搬进了 ChooseSource（合并显示后"这一格"不再唯一对应一条记录，
-            #   必须先按配置顺序挑出要消耗的那一条，再核对它的身份）。
-            ok("Lift 把选条目交给 ChooseSource（合并格按消耗顺序挑，不固定取代表那条）")
-        else:
-            err("Lift 没走 ChooseSource —— 合并格会永远只消耗代表那一条，消耗顺序配置形同虚设")
-
-    _rec = re.search(r"private void RecallInFlight\(Items relay\)[\s\S]*?\n        \}", br_code)
-    if _rec is None:
-        err("找不到 RecallInFlight")
-    elif _rec.group(0).find("Untrack(") < _rec.group(0).find("removeItem("):
-        ok("收回复制品时先 Untrack 再删（自我删除不会被误判成丢到地上、白扣一次账）")
-    else:
-        err("RecallInFlight 顺序反了 —— 会被对账层报成 DroppedOnGround")
-
-    _cl = re.search(r"public void Close\(\)[\s\S]*?\n        \}", br_code)
-    if _cl is None:
-        err("找不到 DigitalBoxRegion.Close")
-    elif "inFlight = null" in _cl.group(0) or "RemoveResolvedHandler" in _cl.group(0):
-        err("Close 里清了 inFlight / 摘了落点回调 —— 关界面那一瞬才落定的物品不会被扣账 = 凭空复制")
-    else:
-        ok("Close 只清会话身份，保留 inFlight 与回调（宿主先 Close 提供者、后 Detach）")
-
-    _wr = re.search(r"public bool WantsRegion\(StorageUiContext c\)[\s\S]*?\n        \}", br_code)
-    if _wr is not None and "IsSessionContext" in _wr.group(0):
-        ok("借道会话里不当区块（同一块面板两处显示 = 内容重复）")
-    else:
-        err("WantsRegion 没排除借道会话")
-
-    _tk = re.search(r"public void Tick\(StorageUiContext c\)[\s\S]*?\n        \}", br_code)
-    if _tk is None:
-        err("找不到 DigitalBoxRegion.Tick")
-    else:
-        _tb2 = _tk.group(0)
-        if "InSession" in _tb2:
-            ok("借道界面里不重新选箱子（会话绑死那一台，否则扣账对象会跟着错）")
-        else:
-            err("Tick 没区分会话模式 —— 玩家一动就换内容，扣账就扣到别的磁盘上")
-        # ⚠ 主面板 Provider 必须**自己**把面板挂进右列存储位；区块(region)才由宿主区块栈挂。
-        #   这个类两种身份都有，提升成 Provider 时漏了这一句 ⟹ 接入自检实测
-        #   "isOpen/dashboard.active/VirtualActive 全 True，但 panel=null"，
-        #   玩家看到的就是"按 F 什么都没打开"（2026-10-04 绕了三轮才定到这里）。
-        if "StorageUiPanels.Attach(" in _tb2:
-            ok("会话分支里自己挂载面板（主面板 Provider 的必备一步，宿主区块栈不会替它挂）")
-        else:
-            err("Tick 的会话分支没调 StorageUiPanels.Attach —— 接管全对但面板不显示，玩家看不到界面")
-
-    if "side > 8" in br_code or "side >8" in br_code.replace(" ", ""):
-        ok("中转页尺寸有上限（不会又开出一个「像大箱子」的页面）")
-    else:
-        err("BiggestItemSide 没有上限保护")
-
-    _ded = re.search(r"internal static int DeductLedger\([\s\S]*?\n        \}", indmain)
-    if _ded is None:
-        err("找不到 DeductLedger —— 借道界面的扣账原语没实现")
-    else:
-        _db = _ded.group(0)
-        if "tryAddItem" in _db:
-            err("DeductLedger 里居然往背包放东西 —— 借道时引擎已经放过了，这里再放就是复制")
-        else:
-            ok("DeductLedger 只扣不加（放进背包是引擎做的）")
-        if "LedgerStateMatches" in _db and "contents[index]" not in _db:
-            ok("扣账按 (id+耐久+state) 匹配，不按条目下标（下标会漂，拿它改存档迟早扣错）")
-        else:
-            err("DeductLedger 的匹配方式不安全（可能用漂移的下标扣账）")
-        if "remain +=" in _db.replace("  ", " "):
-            ok("剩余数扫真源求和，不用「显示值-扣掉值」推算（玩家能自己核对）")
-        else:
-            err("DeductLedger 没扫真源报剩余数")
-
-    # ⚠ 存入核心必须**先算清方案、再一次性落地**（dry-run then commit）。
-    #   旧写法是"边改磁盘边扣 pending，放不下就 return"—— 那时磁盘已经改过、
-    #   源物品却没移除 ⟹ 玩家手里一份 + 箱里一份 = **凭空复制**。
-    #   可达条件很平常：item.amount > 磁盘剩余格数（1×1 可堆物品一次存 50 个就会撞上）。
-    _dep = re.search(r"internal static string DepositAmount\([\s\S]*?\n        \}", indmain)
-    if _dep is None:
-        err("找不到 DepositAmount —— 存入没有可复用的纯数据核心")
-    else:
-        _pb = _dep.group(0)
-        _i_bail = _pb.find("个放不下（未做任何改动）")
-        _i_add = _pb.find("dd.contents.Add(")
-        if _i_bail >= 0 and _i_add >= 0 and _i_bail < _i_add:
-            ok("存入：放不下时在任何一次 dd.contents 修改之前就返回（不会半途而废）")
-        else:
-            err("DepositAmount 又回到「边改边判断放不下」—— 会凭空复制物品")
-        if _pb.find("deposited += units") < _pb.find("pageItems.removeItem(") \
-                and "updateAmount(page," in _pb:
-            ok("存入：先落地箱内、再扣源（整堆 removeItem / 部分 updateAmount）")
-        else:
-            err("DepositAmount 的扣源顺序不对（先扣后放 = 放不下时吞物品）")
-        if "ignoreQuality ? (byte)0" in _pb:
-            ok("存入：弹药类新开条目沿用旧口径把 quality 归 0（否则下次合并不了、白占新行）")
-        else:
-            err("DepositAmount 丢了 ignoreQuality 的归零语义（抽取时改坏了行为）")
-    # 旧入口必须走同一条核心，不留第二份改存档的路径
-    _depold = re.search(r"private static void Deposit\(byte page, int index\)[\s\S]*?\n        \}", indmain)
-    if _depold is None:
-        err("找不到 Deposit(page,index) —— 旧界面的存入口被改名了？")
-    elif "DepositAmount(currentDrop" in _depold.group(0) \
-            and "dd.contents" not in _depold.group(0):
-        ok("旧 UI 的存入也委托给同一核心（只留一份改存档的实现）")
-    else:
-        err("Deposit(page,index) 里还自己改 dd.contents —— 存在第二份存入实现，迟早漂移")
-
-    # ---- 借道界面里的「存入」手势（C 第 4 步）----
-    _dd = re.search(r"private void DepositFromDrag\(\)[\s\S]*?\n        \}", br_code)
-    if _dd is None:
-        err("找不到 DepositFromDrag —— 托着物品点格子的存入没实现")
-    else:
-        _ddb = _dd.group(0)
-        if "page == PlayerInventory.STORAGE" in _ddb:
-            ok("存入前先排除「手上这件是刚从箱里托起来的复制品」（否则会自己吞自己 = 凭空多一件）")
-        else:
-            err("DepositFromDrag 没排除中转页来源 —— 复制品会被存进箱，而那条账还没扣 = 复制")
-        _i_end = _ddb.find("EndHeldItem()")
-        _i_ret = _ddb.find("存入失败：")
-        if _i_end > 0 and _i_ret > 0 and _i_ret < _i_end:
-            ok("只在存入成功后才 EndHeldItem（失败时物品还在原处，拖拽不该被停掉）")
-        else:
-            err("EndHeldItem 的位置不对 —— 存入失败也停拖拽会让玩家手上的东西看起来消失")
-        if "DepositAmount(box, page, index, 0," in _ddb:
-            ok("存入走同一条 DepositAmount 核心，且一次放完手上这一整堆（want=0）")
-        else:
-            err("DepositFromDrag 没复用核心，或又退回一次 1 件（用户实测要一次放完整堆）")
-    _os25 = re.search(r"private void OnSlot\(StorageSlotHit hit\)[\s\S]*?\n        \}", br_code)
-    if _os25 is not None and "hit.Dragging" in _os25.group(0) \
-            and "DepositFromDrag()" in _os25.group(0):
-        ok("会话里的左键按「手上有没有托着东西」分流：托着=存入，没托=取一件")
-    else:
-        err("OnSlot 没分流存入 —— 一格两义说了却没接")
-    if "TryGetHeldItem(" in br_code and "EndHeldItem()" in br_code:
-        ok("下游作为外部程序集用上了新的公开面（TryGetHeldItem / EndHeldItem）")
+        err("没有外部消费者用扁平槽位入口（new StorageSlotList + grid.Refresh）—— 那条路没人验证")
+    if "TryGetHeldItem(" in _CCODE and "EndHeldItem()" in _CCODE:
+        ok("外部消费者用上了公开的 TryGetHeldItem / EndHeldItem")
     else:
         err("公开面 TryGetHeldItem/EndHeldItem 没有外部消费者钉住")
+    if "MergeByIdOnly" in _CCODE:
+        ok("外部消费者用上了 StorageSlotList.MergeByIdOnly（同 id 合并的公开开关）")
+    else:
+        err("没有外部消费者用 MergeByIdOnly —— 那个公开开关没人验证")
 
-    # ⚠ 头部那个"占用"必须和**做存取判断用的是同一个数**。
-    #   面板自己只会算 Σ size_x×size_y（一条 255 个的 1×1 物品算 1 格），
-    #   而数字箱判定用 DigitalItemSize = size_x×size_y×ceil(数量/堆叠上限) —— 两个公式
-    #   ⟹ 显示低报占用：玩家看到 764/1024 却存不进 2×2 的东西（2026-10-04 实测）。
-    if "public int OccupiedCells = -1;" in gp:
-        ok("StorageSlotList 允许调用方直接给占用数（默认 -1 才由面板自己估）")
-    else:
-        err("StorageSlotList 没有 OccupiedCells 覆盖口 —— 面板只能用自己的公式，必然与真源不一致")
-    if "_flat.OccupiedCells >= 0" in strip_comments(gp):
-        ok("头部优先用调用方给的占用数")
-    else:
-        err("头部仍然只用自己的估算 —— 显示的数字不是做判断的那个数")
-    if "slots.OccupiedCells = st.Used" in br_code:
-        ok("下游把 st.Used（判定用的那个数）交给头部显示")
-    else:
-        err("下游没把真源占用传给面板 —— 头部会继续低报")
+# ============================================================================
+# 以下判据只回**本仓库自己的源码**（与外部消费者无关 ⟹ 消费者缺失时也不跳过）。
+# ============================================================================
+_sh25 = strip_comments(src.get("CustomUI.Shared.cs", ""))
 
-    # ---- ★ 弹匣 = 不可分物品（2026-10-04 用户实测：存 30 发要 30 格、取出变成 1 发匣）----
-    _sz = re.search(r"internal int DigitalItemSize\(Item it\)[\s\S]*?\n        \}", indmain)
-    if _sz is None:
-        err("找不到 DigitalItemSize")
-    elif "ItemMagazineAsset" in strip_comments(_sz.group(0)):
-        err("DigitalItemSize 还留着弹匣专属口径（100 发=1 格）—— 收费与记账会重新分成两套数")
-    else:
-        ok("弹匣占用走通用式 = 自身 size_x×size_y（一匣一件，不再按发数折算）")
-    _nm = re.search(r"private void NormalizeMagazineEntries\(DiskData dd\)[\s\S]*?\n        \}", indmain)
-    _nb = "" if _nm is None else strip_comments(_nm.group(0))
-    # ⚠ 判据锁语义不锁类型名：这一族从"弹匣"扩到"内容量类"（弹药箱同族）之后，
-    #   实现改成调用 `IsIndivisibleAsset` 这份**共同判据**，比再抄一遍 `is ItemMagazineAsset` 好。
-    if _nm is not None and "IsIndivisibleAsset(a)" in _nb and "a.amount" in _nb:
-        ok("旧存档里按发合并的条目（弹匣+弹药箱）会被夹回单件容量（用户选定的处理方式）")
-    else:
-        err("缺少内容量类旧数据归一化 —— 取出时会造出「73 发的弹匣」这种原版不存在的物品")
-    _ens = re.search(r"internal DiskData EnsureDiskData\(Guid id\)[\s\S]*?\n        \}", indmain)
-    if _ens is not None and "NormalizeMagazineEntries(d)" in _ens.group(0):
-        ok("归一化挂在 EnsureDiskData 上：任何读磁盘内容的路径都会先过一遍（含载入存档后）")
-    else:
-        err("NormalizeMagazineEntries 没接进 EnsureDiskData —— 旧数据可能永远不被夹")
-    _wa = re.search(r"internal static string WithdrawAmount\([\s\S]*?\n        \}", indmain)
-    if _wa is not None and "indivisible" in _wa.group(0) and "n = it.amount" in _wa.group(0):
-        ok("取出：不可分条目整条取出（不会造出 1 发的弹匣）")
-    else:
-        err("WithdrawAmount 还会按 want=1 拆弹匣")
-    # ---- ★ 出口铁律：记账条目 = 件数，真实物品 = 一件最多装 MaxAmount ----------------
-    #   数字磁盘的条目 amount 是「这个 (id+耐久) 有几件」的**计数**，允许超过单个物品的
-    #   堆叠上限（`DigitalItemSize` 已按 ceil(件数/上限) 分组收费，并成一条与拆成多条
-    #   占用相同，而条目数直接决定 DiskUsedOf / 界面每帧遍历的成本）。
-    #   ⟹ 但**任何把条目变成真实 Item 交给原版页的地方**必须按上限拆/夹，
-    #     否则造出原版不存在的堆叠：一格藏 N 件，而 SleekItem.cs:215-227 只在
-    #     MaxAmount>1 才印 "x数量" ⟹ 玩家完全看不出来（2026-10-04 的"金属板 x4 却只有一个"）。
-    if "internal static int MaxStackOf(ushort id)" in indmain:
-        ok("「一件真实物品装得下多少」集中在 PowerNetwork.MaxStackOf（判据=ItemAsset.MaxAmount）")
-    else:
-        err("没有 MaxStackOf —— 堆叠上限又变成各处自己写一遍，迟早漂移")
-    if _wa is not None and "MaxStackOf(it.id)" in _wa.group(0):
-        ok("WithdrawAmount 交出的那一个 Item 按上限夹（不会整条吐出一个装不下的堆叠）")
-    else:
-        err("WithdrawAmount 不夹上限 —— 取出会造出原版不存在的堆叠")
-    if "MaxStackOf(src.id)" in br_code:
-        ok("借道托起的复制品也按上限夹（弹匣 amount=备弹量恒 ≤ 匣容量，语义不受影响）")
-    else:
-        err("区块 Lift 没夹上限 —— 托进中转页的那一件可能是非法堆叠")
-    _wgs = re.findall(r"internal static string WithdrawGroupSlot\([\s\S]*?\n        \}", indmain)
-    if len(_wgs) >= 2 and all("MaxStackOf(id)" in b for b in _wgs):
-        ok("两处整组取出都走 MaxStackOf 拆堆（同一条判据，不会一份改一份漏）")
-    else:
-        err("WithdrawGroupSlot 有 " + str(len(_wgs)) + " 个重载没按上限拆堆")
-    # ---- /unstack：把已存在的非法堆叠拆成合法堆（玩家点名才做，不自动跑）--------------
-    _unstack = re.search(r"private static string SplitIllegalStacks\([\s\S]*?\n        \}", indmain)
-    if _unstack is None:
-        err("缺 SplitIllegalStacks —— /unstack 没落地")
-    else:
-        # ⚠ 必须剔注释：解释"为什么不用 tryAddItem(item, true)"的注释里正好引用了那句，
-        #   不剔就会把注释当代码 → 假 FAIL（本项目的老坑，反向断言一律先 strip）。
-        _ub = strip_comments(_unstack.group(0))
-        if "PlayerInventory.PAGES - 2" in _ub:
-            ok("/unstack 只扫玩家自己的页（STORAGE/AREA 不是「身上」，不碰箱子）")
-        else:
-            err("/unstack 的扫描范围没收到 PAGES-2 —— 可能去动存储页/附近物品页")
-        _add = _ub.find("tryAddItemAuto(")
-        if _add >= 0 and _ub.find("updateAmount(") > _add:
-            ok("/unstack 先放进背包、成功才扣来源（反了 = 放不下时把物品抹掉）")
-        else:
-            err("/unstack 的扣减顺序不对 —— 这是改玩家存档，顺序反了就凭空少物品")
-        # auto=true 的 tryAddItem 会走装备分支：把拆出来的枪自动装备、顶掉身上原来那件
-        if "tryAddItem(" in _ub:
-            err("/unstack 用了 tryAddItem(item, true) —— auto 会把拆出来的物品自动装备/穿上，" +
-                "顶掉玩家原来那件（要的是 tryAddItemAuto(..., false, false, false)）")
-        else:
-            ok("/unstack 不自动装备（只往 2..6 页塞，拆枪不会顶掉身上那把）")
-        if "(byte[])src.state.Clone()" in _ub:
-            ok("/unstack 拆出来的每一堆各 clone 一份 state（共享 byte[] 会互相污染）")
-        else:
-            err("/unstack 没克隆 state —— 拆出来的几堆会共用同一个数组")
-        if "src.amount <= cap) continue" in _ub:
-            ok("/unstack 对合法堆直接跳过（不碰没坏的东西）")
-        else:
-            err("/unstack 少了合法堆的短路 —— 会把正常物品也搬一遍")
-    _cmd_classes = re.findall(r"internal class (Command\w+) : Command\b", indmain)
-    _cmd_missing = [c for c in _cmd_classes
-                    if ("c is " + c) not in indmain or ("register(new " + c + "())") not in indmain]
-    if _cmd_classes and not _cmd_missing:
-        ok("全部 " + str(len(_cmd_classes)) + " 条聊天命令都进了懒注册表（漏一条 = 命令不存在或重复注册）")
-    else:
-        err("聊天命令没进懒注册表：" + "、".join(_cmd_missing or ["(找不到任何命令)"]) +
-            " —— Commander.init() 会重建命令表，靠 EnsureCommandRegistered 补注册")
-    _dl = re.search(r"internal static int DeductLedger\([\s\S]*?\n        \}", indmain)
-    if _dl is not None and "it.amount != want" in _dl.group(0):
-        ok("扣账：不可分条目只移除备弹量正好相同的那条，绝不拆到两条上")
-    else:
-        err("DeductLedger 会把一匣 25 发的需求拆到 10+15 两条上 = 凭空改写弹匣")
-    _dpp = re.search(r"internal static string DepositAmount\([\s\S]*?\n        \}", indmain)
-    if _dpp is not None and "IsIndivisibleAsset(asset)" in _dpp.group(0):
-        ok("存入：弹匣/枪械走独立成条分支，不会把两匣并成一匣（10+25 变 35）")
-    else:
-        err("DepositAmount 还会合并不可分物品")
-    _sh25 = strip_comments(src.get("CustomUI.Shared.cs", ""))
-    if "RuntimeHelpers.GetHashCode(jar.item)" in _sh25 and "IsIndivisible" in _sh25:
-        ok("分组键对不可分物品按 Item 实例哈希拆开（同一匣跨帧稳定，不会图标全量重载）")
-    else:
-        err("CustomUI 分组键没处理不可分物品 —— 弹匣会在显示上被并成「×总发数」")
+# ---- 扁平槽位入口：占用数要能被调用方覆盖 ----
+if "public int OccupiedCells = -1;" in gp:
+    ok("StorageSlotList 允许调用方直接给占用数（默认 -1 才由面板自己估）")
+else:
+    err("StorageSlotList 没有 OccupiedCells 覆盖口 —— 面板只能用自己的公式，必然与真源不一致")
+if "_flat.OccupiedCells >= 0" in strip_comments(gp):
+    ok("头部优先用调用方给的占用数")
+else:
+    err("头部仍然只用自己的估算 —— 显示的数字不是做判断的那个数")
 
-    # ---- ★ 合并规则返工（只改数字箱：同 id 全合并 + 可配消耗顺序）----
-    # 1) 策略必须**按调用点选**，默认值必须是旧行为 —— 否则会把原版箱子的显示一起改掉
-    #    （用户 2026-10-04 明确"先只改数字箱"）。
-    if "public bool MergeByIdOnly;" in gp:
-        ok("扁平入口有独立的合并策略开关（默认 false = 旧行为，不动原版箱子）")
-    else:
-        err("StorageSlotList 没有 MergeByIdOnly —— 要么改不到数字箱，要么全局改坏原版箱子")
-    if "CollectGroups(jars, into, false);" in _sh25:
-        ok("旧的 2 参 CollectGroups 转发 false（既有调用点行为不变）")
-    else:
-        err("CollectGroups 的 2 参版没保持旧语义 —— 内置视图的合并判据被顺手改掉了")
-    # 2) 数字箱必须开这个开关
-    if "slots.MergeByIdOnly = true" in br_code:
-        ok("数字箱清单按同 id 全合并显示（用户 10-03 定的规则落地）")
-    else:
-        err("数字箱没开 MergeByIdOnly —— 同一把材料仍会占好几格")
-    # 4) ★ 弹匣并格必须是**独立开关且默认关**，并且"哪些弹匣能并"这条判据只有一份
-    #    （用户 10-04 选定"两种模式都做、设置切换"；并格之后一格不代表一匣，
-    #     所以取匣规矩必须由数据层定、还要写给玩家看）。
-    if "public bool MergeContentPages;" in gp:
-        ok("弹匣并格是独立开关（默认 false = 每匣一格，不跟 MergeByIdOnly 捆在一起）")
-    else:
-        err("没有独立的 MergeContentPages —— 玩家没法只改材料合并而保留每匣一格")
-    # ⚠ 26.10.3.29：扁平那条路先过搜索，交给合并核心的是过滤后的 `visible`（判据跟着搬）
-    if "CollectGroups(visible, groups, _flat.MergeByIdOnly, _flat.MergeContentPages)" in gp:
-        ok("网格把 MergeContentPages 透传给合并核心（只有扁平入口拿得到这个策略）")
-    else:
-        err("网格没透传 MergeContentPages —— 开关设了没人读，等于没做")
-    if "IsIndivisible(a) && !(mergeContentPages && IsMergeableContentPage(jar.item, a))" in _sh25:
-        ok("并格例外只从「不可分」里挖出**可并的弹匣**，枪械/近战永远走引用哈希")
-    else:
-        err("GroupKey 的弹匣例外写法变了 —— 核对是否仍然只放开弹匣、没漏进枪械/近战")
-    # ★ 并格范围必须是"内容量类"（弹匣 ∪ 弹药箱），不能退回只认弹匣类型
-    _mc = fn_body(_sh25, "internal static bool IsMergeableContentPage(", "IsMergeableContentPage")
-    if _mc is None:
-        err("找不到 IsMergeableContentPage —— 「什么能并格」又变成各处自己判")
-    elif "IsContentContainer(a)" in _mc and "ItemMagazineAsset" in _mc and "state" in _mc:
-        ok("并格范围 = 弹匣 ∪ 内容量类（弹药箱同权，用户 2026-10-05）且仍排除有 state 的条目")
-    else:
-        err("并格判据缺三项之一（弹匣类型 / 内容量类 / state 排除）—— " +
-            "漏 state 那条会让「界面写 6 匣、点下去只认第一条」复活")
-    # ---- ★ "内容量类"判据（弹药箱那一族，2026-10-05 用户实测）----------------------
-    #   Ranger_40 那 5 个弹药箱：Type=Supply、Amount=40、配方 FillTargetItem ⟹
-    #   `Item.amount` 是**箱里剩多少发**，不是一箱一箱的件数。旧判据只认弹匣类型，
-    #   于是两箱 20 发被并成一条 40、取的时候按 1 个一个发 ⟹ 玩家拿到"1 发的弹药箱"。
-    _cc_ui = fn_body(_sh25, "internal static bool IsContentContainer(", "IsContentContainer")
-    _cc_ind = fn_body(indmain, "internal static bool IsContentContainerAsset(", "IsContentContainerAsset")
-    if _cc_ui is None or _cc_ind is None:
-        err("缺 IsContentContainer / IsContentContainerAsset —— 弹药箱那一族没有共同判据了")
-    else:
-        if "EBlueprintOperation.FillTargetItem" in _cc_ui and "IsItem(a)" in _cc_ui:
-            ok("CustomUI 的「内容量类」按**引擎行为**判（自己有 FillTargetItem 配方且自己是输入）")
-        else:
-            err("CustomUI 的内容量判据没走 FillTargetItem —— 又回到靠类型/靠猜")
-        if "EBlueprintOperation.FillTargetItem" in _cc_ind and "IsItem(a)" in _cc_ind:
-            ok("下游侧同源同判据（主文件不能引用 CustomUI 类型，但推导的是同一份引擎数据）")
-        else:
-            err("下游侧判据与 CustomUI 不同源 —— 两边迟早对「什么算一箱」给出不同答案")
-        # 反向：不许把 5 个弹药箱 ID 硬编码进判据
-        if re.search(r"\b(119|43|44|1192|1193)\b\s*[,)=]", _cc_ui + _cc_ind):
-            err("内容量判据里出现了硬编码物品 ID —— 换存档/加模组就漏，必须按行为推导")
-        else:
-            ok("判据零硬编码物品 ID（原版 51 弹匣 + 5 弹药箱全靠引擎配方数据自动命中）")
-        # 反向：不许退化成"MaxAmount>1 就是不可分"
-        if "a.amount <= 1" not in _cc_ui or "a.amount <= 1" not in _cc_ind:
-            err("内容量判据少了 amount>1 前置 —— 但别反过来把它当唯一判据：见下面那条")
-        else:
-            ok("amount>1 只当**前置短路**（省掉每帧查配方），不是唯一判据")
-        # ⚠ 定位串**不要带参数表**：fn_body 自己会接 `[^)]*\)`，
-        #   写成 `IsIndivisible(ItemAsset a)` 就变成要求两个右括号 → 永远匹配不上（假 FAIL）。
-        _ind_ui = fn_body(_sh25, "internal static bool IsIndivisible(", "IsIndivisible")
-        _ind_ind = fn_body(indmain, "internal static bool IsIndivisibleAsset(", "IsIndivisibleAsset")
-        if _ind_ui is None or _ind_ind is None:
-            err("找不到 IsIndivisible / IsIndivisibleAsset —— 不可分判据的锚点失效")
-        elif "IsContentContainer" in _ind_ui and "IsContentContainerAsset" in _ind_ind \
-                and "ItemMagazineAsset" in _ind_ui and "ItemMagazineAsset" in _ind_ind:
-            ok("不可分 = 类型三项 ∪ 内容量类（弹匣类型判据保留，模组弹匣没配方也不会漏）")
-        else:
-            err("不可分判据变了 —— 类型三项与内容量类必须**并集**，且不能删掉弹匣类型判据")
-    # ---- ★ 内容包不变量：下游物品**一律不可堆叠**（用户 2026-10-05 定的产品决定）------
-    #   一格最大 1 件。这条不是风格：它把"记账件数 vs 真实堆叠"那一整族歧义从源头消掉，
-    #   代价是数字磁盘的占用口径会变（DigitalItemSize 按 ceil(件数/上限) 分组收费），
-    #   所以必须有个检查钉住它，别哪天新加物品又写回 Amount 8。
-    _ind_items = os.path.join(GAME, "Sandbox", "Industrial", "Items")
-    if not os.path.isdir(_ind_items):
-        # ⚠ 发 WARN 的函数叫 w()，warn 是计数器（本项目踩过一次 NameError 类的坑）
-        w("找不到下游内容包 Items 目录，跳过「不许堆叠」不变量检查")
-    else:
-        _stacky = []
-        _dat_n = 0
-        for _dn in sorted(os.listdir(_ind_items)):
-            _dd = os.path.join(_ind_items, _dn)
-            if not os.path.isdir(_dd):
-                continue
-            for _fn in sorted(os.listdir(_dd)):
-                if not _fn.endswith(".dat") or _fn in ("English.dat", "Schinese.dat"):
-                    continue
-                _dat_n += 1
-                try:
-                    _t = io.open(os.path.join(_dd, _fn), "r",
-                                 encoding="utf-8", errors="ignore").read()
-                except Exception:
-                    continue
-                # ★ 只认**顶格**的 Amount = 物品级堆叠上限。
-                #   用 `^\s*Amount` 会把 Blueprints 里**配方材料**的 Amount 当成堆叠上限
-                #   —— 那既会让这条检查假绿，也让批量脚本改坏配方（2026-10-05 真发生过）。
-                _m = re.search(r"(?m)^Amount\s+(\d+)\s*$", _t)
-                if _m is not None and int(_m.group(1)) > 1:
-                    _stacky.append(_dn + "=" + _m.group(1))
-        if _stacky:
-            err("下游内容包里有可堆叠物品（用户要求一格最大 1 件）：" + "、".join(_stacky))
-        else:
-            ok("下游内容包 %d 个 dat 全部不可堆叠（无 Amount>1）" % _dat_n)
-    if "public static bool IsMergeableContentPage(Item item)" in cprov:
-        ok("「哪些弹匣允许并格」经公开面暴露（调用方不必重述判据）")
-    else:
-        err("缺公开查询 IsMergeableContentPage —— 下游只能自己写一份，两边迟早漂")
-    if "is ItemMagazineAsset" in br_code:
-        err("下游桥接自己重述了弹匣判据 —— 显示层并的格与数据层挑的匣会有两个答案，" +
-            "漂了就是「界面写 6 匣、点下去只认第一条」")
-    else:
-        ok("下游桥接零重述弹匣判据（只调 StorageUiPanels.IsMergeableContentPage）")
-    if "slots.MergeContentPages = ContentPagesMerged()" in br_code:
-        ok("数字箱按配置决定弹匣密度（读同一份配置，不写死）")
-    else:
-        err("Fill 没把配置递给 slots.MergeContentPages —— 配置成了摆设")
-    # 5) 界面上说的规矩 = 实际做的规矩（同一份配置，两处读）
-    _rule = re.search(r"private string ContentPickRule\(\)[\s\S]*?\n        \}", br_code)
-    _pick = re.search(r"private bool ChooseSource\([\s\S]*?\n        \}", br_code)
-    if _rule is None or _pick is None:
-        err("缺 ContentPickRule 或 ChooseSource —— 弹匣并格后没人定「点这格取哪一匣」的规矩")
-    else:
-        _rb = strip_comments(_rule.group(0))
-        _pb = strip_comments(_pick.group(0))
-        if "cfgDigitalConsumeOrder" in _rb and "cfgDigitalConsumeOrder" in _pb:
-            ok("Tooltip 说的取匣规矩与 ChooseSource 挑匣读**同一份配置**（说的=做的）")
-        else:
-            err("取匣规矩与挑匣逻辑不同源 —— 界面会开始骗人")
-        if "it.amount" in _pb and "pickContentPage" in _pb:
-            ok("弹匣并格时按**备弹量**排（弹匣没有可用的耐久维，showQuality 只在卡弹时为真）")
-        else:
-            err("弹匣并格后没按备弹量挑 —— 会退化成「点哪格取哪条」或随机")
-        if "IsMergeableContentPage(it)" in _pb:
-            ok("挑匣的候选集合与显示层并格用同一个判据（不会挑出界面没并进去的条目）")
-        else:
-            err("挑匣没核对候选可并格 —— 可能挑到有 state 的独立条目")
-    if "ContentPagesMerged()) hint +=" in br_code and "ContentPickRule()" in br_code:
-        ok("开了弹匣并格时，取匣规矩显式写进每格 Tooltip（自定语义不告诉玩家 = 让人猜）")
-    else:
-        err("并格模式没把规矩顶到 Tooltip —— 玩家只会看到「×N 点下去不知道取到哪一匣」")
-    # 3) 消耗顺序必须可配，且**不可分物品不受它影响**
-    _cs = re.search(r"private bool ChooseSource\([\s\S]*?\n        \}", br_code)
-    if _cs is None:
-        err("找不到 ChooseSource —— 合并格取哪一条没有规矩")
-    else:
-        _cb = strip_comments(_cs.group(0))
-        # ⚠ 定位只用**代码符号**，不要拿注释当锚 —— 注释会被人改写，判据就会假 FAIL。
-        if "indivisible" in _cb and "cfgDigitalConsumeOrder" in _cb \
-                and _cb.find("indivisible") < _cb.find("cfgDigitalConsumeOrder"):
-            ok("ChooseSource 先分流：不可分物品一格一条原样取，可合并的才按顺序挑")
-        else:
-            err("ChooseSource 没先排除不可分物品 —— 会按顺序改挑别的弹匣/枪械（取错备弹量）")
-        if "cfgDigitalConsumeOrder" in _cb and "quality" in _cb:
-            ok("可合并物品的消耗顺序读配置（耐久低/耐久高/存储顺序）")
-        else:
-            err("ChooseSource 没读消耗顺序配置")
-        if "first.id != hit.ItemId" in _cb:
-            ok("ChooseSource 仍核对槽位身份（列表变了就拒绝，不会拿过期下标复制别的条目）")
-        else:
-            err("ChooseSource 丢了身份核对")
-    if "internal enum DigitalConsumeOrder" in indmain and "LowestDurabilityFirst = 0" in indmain:
-        ok("DigitalConsumeOrder 三档齐全，默认耐久低的先出")
-    else:
-        err("缺 DigitalConsumeOrder 配置项")
+# ---- 分组键对不可分物品的处理 ----
+if "RuntimeHelpers.GetHashCode(jar.item)" in _sh25 and "IsIndivisible" in _sh25:
+    ok("分组键对不可分物品按 Item 实例哈希拆开（同一匣跨帧稳定，不会图标全量重载）")
+else:
+    err("CustomUI 分组键没处理不可分物品 —— 弹匣会在显示上被并成「×总发数」")
 
-    # ---- ★ 武器不合并（两边一起改）+ 合并格标 ×N（M个）----
-    # 判据在两个插件里各有一份（主文件不能引用 CustomUI 类型，否则没装时 JIT 崩），
-    # ⟹ 必须钉住**两边列的是同一批资产类型**，否则迟早漂移。
-    _cu_ind = re.search(r"internal static bool IsIndivisible\(ItemAsset a\)[\s\S]*?\n        \}", _sh25)
-    _in_ind = re.search(r"internal static bool IsIndivisibleAsset\(ItemAsset a\)[\s\S]*?\n        \}", indmain)
-    if _cu_ind is None or _in_ind is None:
-        err("找不到某一侧的「不可分」判据函数（改名要同步这条防漂移的判据）")
-    else:
-        _cu_t = set(re.findall(r"is (Item\w+Asset)", _cu_ind.group(0)))
-        _in_t = set(re.findall(r"is (Item\w+Asset)", _in_ind.group(0)))
-        if _cu_t and _cu_t == _in_t:
-            ok("两个插件的「不可分」判据列出同一批资产类型：" + "、".join(sorted(_cu_t)))
-        else:
-            err("「不可分」判据两边不一致：CustomUI={" + "、".join(sorted(_cu_t)) +
-                "} 下游={" + "、".join(sorted(_in_t)) + "} ⟹ 显示拆成两格、扣账却按一条算")
-    # 主文件绝不能引用 CustomUI 的类型（软依赖隔离第一条）
-    if "StorageUiPanels.IsIndivisibleItem" not in strip_comments(indmain):
-        ok("下游主文件没有引用 CustomUI 的不可分判据（避免没装 CustomUI 时 JIT 解析失败）")
-    else:
-        err("Industrial.cs 引用了 StorageUiPanels —— 主文件必须零引用 CustomUI 类型")
-    # 不可分物品按引用哈希分组后，同 id 同耐久会**并列**，List.Sort 不稳定 ⟹ 必须全序
-    _cmp = re.search(r"private static int CompareGroup\(ItemGroup a, ItemGroup b\)[\s\S]*?\n        \}", _sh25)
-    if _cmp is not None and "a.Key.CompareTo(b.Key)" in _cmp.group(0):
-        ok("分组排序有末级判据（Key）= 全序，不可分物品不会每帧互换位置")
-    else:
-        err("CompareGroup 缺末级判据 —— 同 id 同耐久的弹匣/枪械会因 List.Sort 不稳定而每帧跳动、"
-            "格子反复整格重建（图标全量重载）")
-    # 数量文案：不可分物品的 amount <b>不是件数</b>（一匣 25 发印成 ×25 会被读成 25 个弹匣）
-    _bc = re.search(r"internal static string BuildCountText\(ItemGroup g\)[\s\S]*?\n        \}", _sh25)
-    if _bc is None:
-        err("找不到 BuildCountText")
-    elif 'IsIndivisible(g.First.GetAsset())' in _bc.group(0) and '"发"' in _bc.group(0):
-        ok("弹匣报「N发」而不是「×N」—— 不把备弹量伪装成件数")
-    else:
-        err("BuildCountText 又把不可分物品的 amount 当件数印（一匣 25 发会显示成 ×25）")
-    # 一格多匣时那个数**不再是发数** ⟹ 单位必须跟着换（同一条原则：数字要说什么就是什么）
-    # ⚠ 单位现在按类型分（弹匣"匣"/弹药箱"箱"），所以判据查"两种单位都在 + 仍报发"，
-    #   不锁具体写法（锁字面写法是本项目第十几次假 FAIL 的来源）。
-    if '"匣"' in _bc.group(0) and '"箱"' in _bc.group(0) and '"发"' in _bc.group(0):
-        ok("内容量类（弹匣/弹药箱）单件报「N发」、并格报匣/箱数 —— 单位跟着量走，一处定义")
-    else:
-        err("并格后没换单位 —— 一格代表多件时印出来的数字说的是另一件事")
-    # 「×N（M个）」这条已删：不可堆叠物品 N==M 是死代码，可堆叠物品拆几条对玩家无意义
-    if '（" + g.Count + "个）' not in _bc.group(0):
-        ok("没有「×N（M个）」这种重复报数（用户实测指出：两个数说的是同一件事）")
-    else:
-        err("又把条数加回来了 —— 不可堆叠物品 N 与 M 必然相等，纯噪声")
+# ---- ★ 合并规则返工（只改数字箱：同 id 全合并 + 可配消耗顺序）----
+# 1) 策略必须**按调用点选**，默认值必须是旧行为 —— 否则会把原版箱子的显示一起改掉
+#    （用户 2026-10-04 明确"先只改数字箱"）。
+if "public bool MergeByIdOnly;" in gp:
+    ok("扁平入口有独立的合并策略开关（默认 false = 旧行为，不动原版箱子）")
+else:
+    err("StorageSlotList 没有 MergeByIdOnly —— 要么改不到数字箱，要么全局改坏原版箱子")
+if "CollectGroups(jars, into, false);" in _sh25:
+    ok("旧的 2 参 CollectGroups 转发 false（既有调用点行为不变）")
+else:
+    err("CollectGroups 的 2 参版没保持旧语义 —— 内置视图的合并判据被顺手改掉了")
 
-    # Awake 里的顺序：先检测、后安装
-    _aw = re.search(r"private void Awake\(\)[\s\S]*?\n        \}", indmain)
-    if _aw is None:
-        err("取不到 Awake 方法体")
-    else:
-        _awb = _aw.group(0)
-        i_has = _awb.find("HasCustomUi()")
-        i_ins = _awb.find("InstallNow(")
-        if i_has >= 0 and i_ins >= 0 and i_has < i_ins:
-            ok("Awake 里顺序对：先 HasCustomUi() 再 InstallNow()（后者在 if 分支内）")
-        else:
-            err("Awake 里检测/安装顺序不对或压根没接（i_has=%d i_ins=%d）" % (i_has, i_ins))
+# 4) ★ 弹匣并格必须是**独立开关且默认关**，并且"哪些弹匣能并"这条判据只有一份
+#    （用户 10-04 选定"两种模式都做、设置切换"；并格之后一格不代表一匣，
+#     所以取匣规矩必须由数据层定、还要写给玩家看）。
+if "public bool MergeContentPages;" in gp:
+    ok("弹匣并格是独立开关（默认 false = 每匣一格，不跟 MergeByIdOnly 捆在一起）")
+else:
+    err("没有独立的 MergeContentPages —— 玩家没法只改材料合并而保留每匣一格")
+# ⚠ 26.10.3.29：扁平那条路先过搜索，交给合并核心的是过滤后的 `visible`（判据跟着搬）
+if "CollectGroups(visible, groups, _flat.MergeByIdOnly, _flat.MergeContentPages)" in gp:
+    ok("网格把 MergeContentPages 透传给合并核心（只有扁平入口拿得到这个策略）")
+else:
+    err("网格没透传 MergeContentPages —— 开关设了没人读，等于没做")
+if "IsIndivisible(a) && !(mergeContentPages && IsMergeableContentPage(jar.item, a))" in _sh25:
+    ok("并格例外只从「不可分」里挖出**可并的弹匣**，枪械/近战永远走引用哈希")
+else:
+    err("GroupKey 的弹匣例外写法变了 —— 核对是否仍然只放开弹匣、没漏进枪械/近战")
+# ★ 并格范围必须是"内容量类"（弹匣 ∪ 弹药箱），不能退回只认弹匣类型
+_mc = fn_body(_sh25, "internal static bool IsMergeableContentPage(", "IsMergeableContentPage")
+if _mc is None:
+    err("找不到 IsMergeableContentPage —— 「什么能并格」又变成各处自己判")
+elif "IsContentContainer(a)" in _mc and "ItemMagazineAsset" in _mc and "state" in _mc:
+    ok("并格范围 = 弹匣 ∪ 内容量类（弹药箱同权，用户 2026-10-05）且仍排除有 state 的条目")
+else:
+    err("并格判据缺三项之一（弹匣类型 / 内容量类 / state 排除）—— " +
+        "漏 state 那条会让「界面写 6 匣、点下去只认第一条」复活")
 
-    # ---- 用的正是为下游这种数据模型准备的那条入口 ----
-    if "DigitalBoxRegion : IStorageUiProvider, IStorageUiRegion" in br_code:
-        ok("下游走公开区块接口（不抢存储位，面板交给宿主排版）")
+# ---- ★ "内容量类"判据（弹药箱那一族，2026-10-05 用户实测）----------------------
+#   Ranger_40 那 5 个弹药箱：Type=Supply、Amount=40、配方 FillTargetItem ⟹
+#   `Item.amount` 是**箱里剩多少发**，不是一箱一箱的件数。旧判据只认弹匣类型，
+#   于是两箱 20 发被并成一条 40、取的时候按 1 个一个发 ⟹ 玩家拿到"1 发的弹药箱"。
+_cc_ui = fn_body(_sh25, "internal static bool IsContentContainer(", "IsContentContainer")
+if _cc_ui is None:
+    err("缺 IsContentContainer —— 弹药箱那一族没有共同判据了")
+else:
+    if "EBlueprintOperation.FillTargetItem" in _cc_ui and "IsItem(a)" in _cc_ui:
+        ok("「内容量类」按**引擎行为**判（自己有 FillTargetItem 配方且自己是输入）")
     else:
-        err("下游没实现公开区块接口")
-    if "new StorageSlotList()" in br_code and "grid.Refresh(slots)" in br_code:
-        ok("下游用**扁平槽位入口**（数字箱本来就是 List<Item> + 总格数）")
+        err("内容量判据没走 FillTargetItem —— 又回到靠类型/靠猜")
+    # 反向：不许把 5 个弹药箱 ID 硬编码进判据
+    if re.search(r"\b(119|43|44|1192|1193)\b\s*[,)=]", _cc_ui):
+        err("内容量判据里出现了硬编码物品 ID —— 换存档/加模组就漏，必须按行为推导")
     else:
-        err("下游没用扁平入口 —— 要么绕开了组件，要么说明 E'-1 那条入口是白做的")
-    if "slots.CapacityCells = st.Capacity" in br_code:
-        ok("容量用数字箱自己的总格数（st.Capacity），不是硬编一个数")
+        ok("判据零硬编码物品 ID（原版 51 弹匣 + 5 弹药箱全靠引擎配方数据自动命中）")
+    # 反向：不许退化成"MaxAmount>1 就是不可分"
+    if "a.amount <= 1" not in _cc_ui:
+        err("内容量判据少了 amount>1 前置 —— 但别反过来把它当唯一判据：见下面那条")
     else:
-        err("没把数字箱容量交给头部 → 占用统计缺分母")
-    if "PowerNetwork.DiskIdOf(" in br_code and "EnsureDiskData(" in br_code \
-            and "dd.contents" in br_code:
-        ok("内容读 DiskData.contents —— 与下游自己那套界面同源，数据没有第二份")
+        ok("amount>1 只当**前置短路**（省掉每帧查配方），不是唯一判据")
+    # ⚠ 定位串**不要带参数表**：fn_body 自己会接 `[^)]*\)`。
+    _ind_ui = fn_body(_sh25, "internal static bool IsIndivisible(", "IsIndivisible")
+    if _ind_ui is None:
+        err("找不到 IsIndivisible —— 不可分判据的锚点失效")
+    elif "IsContentContainer" in _ind_ui and "ItemMagazineAsset" in _ind_ui:
+        ok("不可分 = 类型三项 ∪ 内容量类（弹匣类型判据保留，模组弹匣没配方也不会漏）")
     else:
-        err("下游区块的数据源不是它自己界面的那一份（两处显示迟早不一致）")
-    # ★ 语义在 2026-10-03 换过一次（用户选定"数字箱自己的借道界面"）：
-    #   路 A（区块里点击即转移）→ 借道界面（左键托起一件、落到背包/丢地上才扣账），
-    #   区块降级为**只读预览**（点它 = 进入借道界面）。
-    #   ⟹ 下面这几条判据查的是**新**不变量；三条底层担心一条都没放松：
-    #     ① 改存档必须走纯数据核心（不能调 UI 层，界面没开着会静默失效）；
-    #     ② 一次只能动**一件**（合并格 ×N 不能被一次吞光）；
-    #     ③ 同一套界面里按键语义只能有一套。
-    if "grid.OnSlotClicked = OnSlot;" in br_code and \
-            "grid.OnSlotRightClicked = OnSlotRight;" in br_code:
-        ok("下游挂了槽位回调：动作复用下游自己的数据核心，不新写一条改存档的路径")
-    else:
-        err("下游没挂回调（或回调改名了）")
-    if "DigitalUI.DeductLedger(" in br_code:
-        ok("扣账走纯数据核心 DeductLedger（不碰数字箱 UI 的 currentDrop / Rebuild）")
-    else:
-        err("扣账没走数据核心 —— 直接调 UI 层会因界面没开着而静默失效")
-    if "Lift(hit)" in br_code and "GrabFromStorage(" in br_code:
-        ok("借道界面左键 = 托起一件（原版那套落点/取消），不再自造中间态")
-    else:
-        err("借道界面没走托起路径 —— 用户明确要的原版手感丢了")
-    if "EnterSession()" in br_code and "Take(" not in br_code:
-        ok("区块降级为只读预览（点它进入借道界面），不再有两套按键语义并存")
-    else:
-        err("区块仍在直接取放 —— 同一功能两处两套语义（用户 2026-10-02 就是因此退回的）")
-    # ⚠ 会话状态必须在**打开界面之前**登记：OpenVirtualStorage 内部就会 TryOpen →
-    #   调我们的 Open(ctx) → Fill(sessionDrop)。等它返回之后再赋值 = 接管出来的清单是空的
-    #   （2026-10-04 实测：日志"数字箱刷新：共 0 项"，玩家什么都没看见）。
-    _tos = re.search(r"internal static bool TryOpenSession\([\s\S]*?\n        \}", br_code)
-    if _tos is None:
-        err("找不到 TryOpenSession")
-    else:
-        _tb = _tos.group(0)
-        # ⚠ 只锁语义不锁参数个数：这条判据原先写死了三参调用，
-        #   加一个"页面性质"参数就假 FAIL（同一类第十三次）。
-        if "new Session(drop)" in _tb and re.search(
-                r"OpenVirtualStorage\(\s*page\s*,\s*title\s*,\s*new Session\(drop\)\s*(,\s*StorageUiVirtualPage\.\w+\s*)?\)",
-                _tb):
-            ok("会话身份随调用一起交出去（放进 tag），不存在「先设字段再调用」的时序坑")
-        else:
-            err("TryOpenSession 没把 Session 对象当 tag 传 —— 又回到用字段传会话身份，会被重入的 Close 抹掉")
-        # ⚠ 不能用 `[^)]*`：实参里有 `new Session(drop)`，那个右括号会把匹配截断（假 FAIL）。
-        if re.search(r"OpenVirtualStorage\([\s\S]{0,200}?StorageUiVirtualPage\."
-                     r"(RelayWithSections|Relay|Storage)\b", _tb):
-            ok("数字箱显式声明了中转页的性质（不声明就只能由前置猜「这一页算不算箱子」）")
-        else:
-            err("TryOpenSession 没声明 StorageUiVirtualPage —— 借道页会被当成真箱子（复制品可能被合成扣掉）")
-        if "IsVirtualStorageOpen" in _tb:
-            ok("已有别的借道会话时不抢存储页（并留一条日志说明为什么回退旧界面）")
-        else:
-            err("TryOpenSession 没查 IsVirtualStorageOpen —— 两个借道会话会互相顶掉")
-    # ② 一次只一件：**一件 = 一个物品**，不是"合并格里显示的 ×N"。
-    #   可拆物品（材料/食物）amount 恒 1；不可分物品（弹匣）amount = 整条的备弹量 ——
-    #   弹匣的 amount 是发数，按 1 造就会托出一个「1 发的弹匣」（2026-10-04 用户实测）。
-    #   两种都不许按合并后的总量取（那是 2026-10-01 报过的"点一下剩余量全没了"）。
-    #   ⚠ 判据不锁写法只锁语义：可拆=1、不可分=整条，且出口再按上限夹一道。
-    if re.search(r"whole \? src\.amount : 1", br_code) and \
-            "MaxStackOf(src.id)" in br_code and "hit.Amount" not in br_code:
-        ok("一次只托一件：可拆物品 amount=1，弹匣=整条备弹量；绝不按合并格的 ×N 取")
-    else:
-        err("取物数量不对 —— 要么按合并格 ×N 一次吞光，要么把弹匣拆成 1 发")
-    if "if (hit.Dragging)" in br_code:
-        ok("拖拽中点击被显式拒绝（两套模型不能混，混了就是一边取物一边还挂着）")
-    else:
-        err("没挡拖拽中点击 —— 会重现「又取走一件、手上那件还挂着」")
-    if "grid.TooltipHint = " in br_code:
-        ok("自有按键约定写在每格 Tooltip 上（玩家不知道约定时每个键都像坏了）")
-    else:
-        err("自有约定没挂到 Tooltip —— 语义是自定的却不告诉玩家，等于让人猜")
-    # ⚠ 2026-10-01 用户否决整组取放（数量多时误操作代价太大）
-    if "WithdrawGroupSlot" in br_code:
-        err("数字箱界面里又出现整组取出 —— 用户已明确否决这个操作")
-    else:
-        ok("不做整组取放（按用户 2026-10-01 的决定移除）")
-    # ⚠ 槽位对照表：点 A 格取出 B 格 = 改错存档，这是本功能最贵的错
-    if "slotDisk.Clear()" in br_code and "slotContent.Clear()" in br_code \
-            and "slotDisk.Add(diskGuid)" in br_code and "slotContent.Add(j)" in br_code:
-        ok("槽位对照表与 slots 同步清空、同步追加（防「点 A 格取出 B 格」）")
-    else:
-        err("槽位对照表与 slots 不同步 —— 会取错格子，而且这是改存档")
-    if "grid.MarkDirty();" in br_code:
-        ok("动作完成后标脏，下一帧按新数据重建（不在回调里当场重算）")
-    else:
-        err("取出后没标脏 —— 界面会继续显示已经不存在的格子")
-    # 下游侧新增的公开核心不得反过来依赖 UI
-    # ★★ 数据安全的根：必须"先放进背包成功、才扣数字箱"，且用的是返回 bool 的 tryAddItem，
-    #    不是会 dropItem 掉地上的 forceAddItem（玩家看不见就以为东西消失了）。
-    _wa = re.search(r"internal static string WithdrawAmount\([\s\S]*?\n        \}", indmain)
-    if _wa is None:
-        err("找不到 WithdrawAmount 核心（改名或签名变了要同步判据）")
-    else:
-        _wab = strip_comments(_wa.group(0))
-        if "Rebuild()" not in _wab:
-            ok("WithdrawAmount 核心不碰 UI（不触发数字箱界面的 Rebuild）")
-        else:
-            err("WithdrawAmount 里还在刷 UI —— 从区块调用会把关着的界面拉起来")
-        if "tryAddItem(" in _wab and "forceAddItem" not in _wab:
-            ok("取出走 tryAddItem（返回 bool）—— 放不下就**不扣数字箱**，不丢也不掉地上")
-        else:
-            err("取出还在用 forceAddItem —— 背包满时它会 dropItem 掉脚下，玩家看不见=以为丢了")
-        _add_at = _wab.find("tryAddItem(")
-        if _add_at >= 0 and ("RemoveAt(index)" in _wab[_add_at:] or "it.amount -=" in _wab[_add_at:]):
-            ok("扣减/删除条目发生在 tryAddItem **之后**（顺序反了就是先删后给 = 丢数据）")
-        else:
-            err("扣减不在 tryAddItem 之后 —— 这就是把物品凭空抹掉的写法")
-        if "it.state.Clone()" in _wab:
-            ok("state 数组克隆后再交给背包（否则两份 Item 共享同一 byte[]，改动互相污染）")
-        else:
-            err("state 没克隆 —— 背包里那把枪的弹药变化会改到箱内那条上")
-    _wgs = re.search(r"internal static string WithdrawGroupSlot\([\s\S]*?\n        \}", indmain)
-    if _wgs is not None:
-        _wgb = strip_comments(_wgs.group(0))
-        if "it.amount -= (byte)take;" in _wgb:
-            ok("WithdrawGroupSlot 保留了循环推进（少了它会 while 死循环卡死游戏）")
-        else:
-            err("WithdrawGroupSlot 丢了 it.amount 递减 —— 一点就卡死")
-        if "tryAddItem(" in _wgb and "forceAddItem" not in _wgb:
-            ok("整组取出同样走 tryAddItem，放不下就停在当前并保留剩余")
-        else:
-            err("整组取出还在用 forceAddItem")
+        err("不可分判据变了 —— 类型三项与内容量类必须**并集**，且不能删掉弹匣类型判据")
 
-    # NearestDigitalBox：只读真源 + 平面距离
-    _near = re.search(r"internal BarricadeDrop NearestDigitalBox\([\s\S]*?\n        \}", indmain)
-    if _near is None:
-        err("找不到 NearestDigitalBox")
-    else:
-        _nb = strip_comments(_near.group(0))
-        if "_digitals" in _nb and "new List" not in _nb:
-            ok("NearestDigitalBox 只遍历 _digitals（不建副本，真源仍只有一份）")
-        else:
-            err("NearestDigitalBox 实现不对")
-        if "p.x - from.x" in _nb and "p.z - from.z" in _nb:
-            ok("距离用平面距离（忽略 Y）—— 跨楼层不该把箱子误排除")
-        else:
-            err("距离用了三维 —— 数字箱在楼上/楼下会被误判为超出射程")
+# ---- 公开面：哪些弹匣允许并格 ----
+if "public static bool IsMergeableContentPage(Item item)" in cprov:
+    ok("「哪些弹匣允许并格」经公开面暴露（调用方不必重述判据）")
+else:
+    err("缺公开查询 IsMergeableContentPage —— 下游只能自己写一份，两边迟早漂")
+# ⚠ 分组排序必须全序
+_cmp = re.search(r"private static int CompareGroup\(ItemGroup a, ItemGroup b\)[\s\S]*?\n        \}", _sh25)
+if _cmp is not None and "a.Key.CompareTo(b.Key)" in _cmp.group(0):
+    ok("分组排序有末级判据（Key）= 全序，不可分物品不会每帧互换位置")
+else:
+    err("CompareGroup 缺末级判据 —— 同 id 同耐久的弹匣/枪械会因 List.Sort 不稳定而每帧跳动、"
+        "格子反复整格重建（图标全量重载）")
+# 数量文案：不可分物品的 amount <b>不是件数</b>（一匣 25 发印成 ×25 会被读成 25 个弹匣）
+_bc = re.search(r"internal static string BuildCountText\(ItemGroup g\)[\s\S]*?\n        \}", _sh25)
+if _bc is None:
+    err("找不到 BuildCountText")
+elif 'IsIndivisible(g.First.GetAsset())' in _bc.group(0) and '"发"' in _bc.group(0):
+    ok("弹匣报「N发」而不是「×N」—— 不把备弹量伪装成件数")
+else:
+    err("BuildCountText 又把不可分物品的 amount 当件数印（一匣 25 发会显示成 ×25）")
+# 一格多匣时那个数**不再是发数** ⟹ 单位必须跟着换（同一条原则：数字要说什么就是什么）
+if '"匣"' in _bc.group(0) and '"箱"' in _bc.group(0) and '"发"' in _bc.group(0):
+    ok("内容量类（弹匣/弹药箱）单件报「N发」、并格报匣/箱数 —— 单位跟着量走，一处定义")
+else:
+    err("并格后没换单位 —— 一格代表多件时印出来的数字说的是另一件事")
+if '（" + g.Count + "个）' not in _bc.group(0):
+    ok("没有「×N（M个）」这种重复报数（用户实测指出：两个数说的是同一件事）")
+else:
+    err("又把条数加回来了 —— 不可堆叠物品 N 与 M 必然相等，纯噪声")
 
-    # ---- 两个 .bat 都要带上第二个文件 + 引用 + 纯 ASCII ----
-    for _bp, _lbl in ((os.path.join(IND, "build.bat"), "build.bat"),
-                      (os.path.join(IND, "_check_industrial.bat"), "_check_industrial.bat")):
-        if not os.path.exists(_bp):
-            err("找不到 " + _lbl)
-            continue
-        with open(_bp, "rb") as f:
-            _raw = f.read()
-        _txt = _raw.decode("utf-8", errors="ignore")
-        if "CustomUIMod.dll" in _txt:
-            ok(_lbl + " 引用了 CustomUIMod.dll")
-        else:
-            err(_lbl + " 没引用 CustomUIMod.dll → 编译必失败")
-        if "Industrial.CustomUi.cs" in _txt:
-            ok(_lbl + " 带上了 Industrial.CustomUi.cs（漏了会假失败 / 产物缺类）")
-        else:
-            err(_lbl + " 漏了 Industrial.CustomUi.cs")
-        _na = sum(1 for b in _raw if b > 127)
-        if _na == 0:
-            ok(_lbl + " 纯 ASCII（中文 REM 可能吞掉行尾，坑 #52）")
-        else:
-            err(_lbl + " 里有 %d 个非 ASCII 字节 —— cmd 按 GBK 读 .bat 会解析错位" % _na)
-        # ⚠ if (...) 块内的 echo 带**未转义括号**会提前闭合代码块，
-        #   症状是 `. was unexpected at this time.`（本轮我自己就踩在这里）
-        _badparen = None
-        _inblock = False
-        for _line in _txt.splitlines():
-            _s = _line.strip()
-            if _s.startswith("if ") and _s.endswith("("):
-                _inblock = True
-                continue
-            if _inblock and _s == ")":
-                _inblock = False
-                continue
-            if _inblock and _s.startswith("echo") and "(" in _s.replace("^(", ""):
-                _badparen = _s
-                break
-        if _badparen:
-            err(_lbl + " 的 if 块内有 echo 带未转义括号（会提前闭合代码块）：" + _badparen[:60])
-        else:
-            ok(_lbl + " 的 if 块内 echo 没有裸括号")
+# ---- 统一按键语义所需的公开面（2026-10-01）----
+if "public bool Ctrl;" in gp24 and "public bool Dragging;" in gp24:
+    ok("StorageSlotHit 带上按键状态（Ctrl / 是否已托起）—— 插件才能复刻内置那套分发")
+else:
+    err("StorageSlotHit 缺按键状态 —— 插件没法区分「取回」和「取回并托起」")
+# ⚠ 26.10.3.32：填 hit 的那段搬进了共享层 DeliverSlotHit（两个面板共用）⟹ 判据跟过去。
+if "hit.Ctrl = IsCtrlDown();" in sh:
+    ok("按键状态由组件统一读（插件不必自己去碰 Input）")
+else:
+    err("组件没填 hit.Ctrl —— 插件只能瞎猜按键")
+# ⚠ 托起逻辑已收进 GrabFromPages（背包页与存储页共用），判据要指到它。
+_gfp = re.search(r"private static bool GrabFromPages\([\s\S]*?\n        \}", cprov)
+_gfp_body = strip_comments(_gfp.group(0)) if _gfp is not None else ""
+if _gfp_body and "BeginGrabFrom(page, jar)" in _gfp_body:
+    ok("两个托起入口共用一份页内查找 + BeginGrabFrom（不写第二套拖拽实现）")
+else:
+    err("GrabFromPages 没走 BeginGrabFrom —— 又开一套拖拽实现就是两份漂移")
+if _gfp_body and "ReferenceEquals(jar.item, item)" in _gfp_body:
+    ok("先按引用认物品（ItemJar 不克隆），退一步才按 id+数量+耐久匹配")
+else:
+    err("托起没按引用优先匹配 —— 可能托起另一件同名物品")
+if "public static bool GrabFromStorage(Item item)" in cprov and \
+        "PlayerInventory.STORAGE" in cprov:
+    ok("公开入口 GrabFromStorage 存在（虚拟清单逐件托起要用）")
+else:
+    err("缺 GrabFromStorage —— 虚拟清单没法把物品托起来")
+_bgf = fn_body(sh24, "internal static bool BeginGrabFrom", "BeginGrabFrom")
+if _bgf is not None and "fDragFromPage.SetValue(null, page)" in _bgf:
+    ok("托起支持任意页（dragFromPage 用传入页号）—— 原版收尾按它归位，写死 STORAGE 会归错地方")
+else:
+    err("BeginGrabFrom 没按页号写 dragFromPage —— 托起后取消/收尾会归位到错的页")
+if "return BeginGrabFrom(PlayerInventory.STORAGE, jar);" in sh24:
+    ok("内置左键也走同一个 BeginGrabFrom（托起逻辑只有一份）")
+else:
+    err("内置 BeginGrab 没委托给 BeginGrabFrom —— 拖拽反射出现两份实现")
 
-    # ---- 配置项 ----
-    if re.search(r'Config\.Bind\("General",\s*"ShowDigitalBoxInStorageUI"', main_code):
-        ok("[General] ShowDigitalBoxInStorageUI 已接配置（可一键关掉这块显示）")
-    else:
-        err("缺 ShowDigitalBoxInStorageUI 配置")
-    if re.search(r'Config\.Bind\("General",\s*"DigitalBoxUIRadius",\s*12f', main_code):
-        ok("[General] DigitalBoxUIRadius 已接配置（射程可调）")
-    else:
-        err("缺 DigitalBoxUIRadius 配置")
-
-    # ---- 「选哪一台」的规则（2026-09-29：现场两台箱子时第一版无从核对）----
-    _find = re.search(r"private BarricadeDrop FindBox\(\)[\s\S]*?\n        \}", br_code)
-    if _find is None:
-        err("取不到 FindBox 的函数体")
-    else:
-        _fb = _find.group(0)
-        if "DigitalUI.LastOperated" in _fb and "InRange(pn, last, at, max)" in _fb:
-            ok("选箱子优先用「最近操作过的那台」，且**必须再判射程**（不判就会拿着五分钟前的那台）")
-        else:
-            err("FindBox 没走「最近操作 + 判射程」—— 用户刚操作完 B、开箱子却看到 A")
-        if "NearestDigitalBox(at, max)" in _fb:
-            ok("没操作过任何箱子时回退到射程内最近一台")
-        else:
-            err("FindBox 少了回退分支 —— 从没开过数字箱界面的玩家永远看不到内容")
-
-    # LastOperated 必须跨关闭保留、但**离开关卡时无条件清**
-    if "internal static BarricadeDrop LastOperated" in main_code:
-        ok("DigitalUI 暴露 LastOperated（跨 Close 保留）")
-    else:
-        err("DigitalUI 没有 LastOperated —— 区块无从知道「刚才在用哪台」")
-    _lvl = re.search(r"internal static void OnLevelExit\(\)[\s\S]*?\n        \}", main_code)
-    if _lvl is None:
-        err("取不到 DigitalUI.OnLevelExit")
-    elif "lastOperatedDrop = null;" not in _lvl.group(0):
-        err("OnLevelExit 没清 lastOperatedDrop —— 会拿着**上一张地图**已销毁的 BarricadeDrop")
-    elif "if (isOpen)" in _lvl.group(0) and \
-            _lvl.group(0).index("lastOperatedDrop = null;") > _lvl.group(0).rindex("}"):
-        err("lastOperatedDrop 的清理被关在 if(isOpen) 里 —— 正常关界面时不会执行")
-    else:
-        ok("OnLevelExit 无条件清 lastOperatedDrop（关卡里的 drop 已随世界销毁）")
-
-    # 标题必须说清「是哪一台 + 凭什么选它」—— 这才是第一版真正缺的东西
-    if "private string TitleFor(" in br_code and "pickedWasLastOperated ? \"最近操作\"" in br_code \
-            and "grid.Title = TitleFor(pn, drop);" in br_code:
-        ok("标题带坐标与选择依据（最近操作 / 附近最近）—— 否则任何选择规则看起来都像随机")
-    else:
-        err("标题没说「是哪一台」—— 现场两台箱子时玩家无从核对，会把设计选择误当成 bug")
-    # 判距口径要和 NearestDigitalBox 一致（都是平面）
-    _inr = re.search(r"private static bool InRange\([\s\S]*?\n        \}", br_code)
-    if _inr is not None and "p.x - from.x" in _inr.group(0) and "p.y" not in _inr.group(0):
-        ok("InRange 与 NearestDigitalBox 同为平面距离（口径不一致会自相矛盾）")
-    elif _inr is None:
-        err("找不到 InRange —— 回退分支的判距没独立实现就会漏判")
-    else:
-        err("InRange 用了三维距离 —— 与 NearestDigitalBox 口径不一致")
-
-    # ---- 统一按键语义所需的公开面（2026-10-01）----
-    if "public bool Ctrl;" in gp24 and "public bool Dragging;" in gp24:
-        ok("StorageSlotHit 带上按键状态（Ctrl / 是否已托起）—— 插件才能复刻内置那套分发")
-    else:
-        err("StorageSlotHit 缺按键状态 —— 插件没法区分「取回」和「取回并托起」")
-    # ⚠ 26.10.3.32：填 hit 的那段搬进了共享层 DeliverSlotHit（两个面板共用）⟹ 判据跟过去。
-    if "hit.Ctrl = IsCtrlDown();" in sh:
-        ok("按键状态由组件统一读（插件不必自己去碰 Input）")
-    else:
-        err("组件没填 hit.Ctrl —— 插件只能瞎猜按键")
-    # ⚠ 托起逻辑已收进 GrabFromPages（背包页与存储页共用），判据要指到它，
-    #   否则"合法地没有重复实现"会被报成假 FAIL（本项目第九次踩这条）。
-    _gfp = re.search(r"private static bool GrabFromPages\([\s\S]*?\n        \}", cprov)
-    _gfp_body = strip_comments(_gfp.group(0)) if _gfp is not None else ""
-    if _gfp_body and "BeginGrabFrom(page, jar)" in _gfp_body:
-        ok("两个托起入口共用一份页内查找 + BeginGrabFrom（不写第二套拖拽实现）")
-    else:
-        err("GrabFromPages 没走 BeginGrabFrom —— 又开一套拖拽实现就是两份漂移")
-    if _gfp_body and "ReferenceEquals(jar.item, item)" in _gfp_body:
-        ok("先按引用认物品（ItemJar 不克隆），退一步才按 id+数量+耐久匹配")
-    else:
-        err("托起没按引用优先匹配 —— 可能托起另一件同名物品")
-    if "public static bool GrabFromStorage(Item item)" in cprov and \
-            "PlayerInventory.STORAGE" in cprov:
-        ok("公开入口 GrabFromStorage 存在（虚拟清单逐件托起要用）")
-    else:
-        err("缺 GrabFromStorage —— 虚拟清单没法把物品托起来")
-    _bgf = fn_body(sh24, "internal static bool BeginGrabFrom", "BeginGrabFrom")
-    if _bgf is not None and "fDragFromPage.SetValue(null, page)" in _bgf:
-        ok("托起支持任意页（dragFromPage 用传入页号）—— 原版收尾按它归位，写死 STORAGE 会归错地方")
-    else:
-        err("BeginGrabFrom 没按页号写 dragFromPage —— 托起后取消/收尾会归位到错的页")
-    if "return BeginGrabFrom(PlayerInventory.STORAGE, jar);" in sh24:
-        ok("内置左键也走同一个 BeginGrabFrom（托起逻辑只有一份）")
-    else:
-        err("内置 BeginGrab 没委托给 BeginGrabFrom —— 拖拽反射出现两份实现")
-
-    # ---- 文档 ----
-    if "NoInlining" in _rt24 and "软依赖" in _rt24:
-        ok("开发文档 写了软依赖的类型隔离（NoInlining）")
-    else:
-        err("README 缺软依赖隔离的说明 —— 这是接 CustomUI 时最容易做错的一步")
+# ---- 文档 ----
+if "NoInlining" in _rt24 and "软依赖" in _rt24:
+    ok("开发文档 写了软依赖的类型隔离（NoInlining）")
+else:
+    err("README 缺软依赖隔离的说明 —— 这是接 CustomUI 时最容易做错的一步")
 
 # ------------------------------------ 26. 中转页对账（CustomUI.Relay.cs，C 第 3 步）
 out.append("")
@@ -7216,15 +6291,17 @@ else:
             err("补丁 4 的 catch 必须 return true —— 否则异常会拦掉原版所有拖拽")
 
     # 公开面要有外部消费者钉住（同坑 #45/#49 的教训：内置视图能走 internal）
-    if br:
-        if "StorageUiRelay.Track(" in br and "AddResolvedHandler(" in br:
-            ok("接入自检真的 Track 并挂了落点回调（公开面对外部可用）")
+    if not _CHAVE:
+        skip("没扫到外部消费者 —— 跳过「对账公开面有没有人从外部用」")
+    else:
+        if "StorageUiRelay.Track(" in _CCODE and "AddResolvedHandler(" in _CCODE:
+            ok("外部消费者真的 Track 并挂了落点回调（公开面对外部可用）")
         else:
-            err("桥接没走 Track/AddResolvedHandler —— 对账的公开面没人从外部验证")
-        if "new RelayResolvedHandler(" in br:
+            err("没有外部消费者走 Track/AddResolvedHandler —— 对账的公开面没人从外部验证")
+        if "new RelayResolvedHandler(" in _CCODE:
             ok("落点委托实例存字段复用（面板重建不会挂出两份 handler）")
         else:
-            err("桥接每次建面板都新建落点委托 —— 同一次落点会被报多遍")
+            err("外部消费者每次建面板都新建落点委托 —— 同一次落点会被报多遍")
 
     # ★ 26.10.3.41：订阅口**按来源记名**。
     #   中转页是全局单例，但订阅者挂在全局列表上 —— 不按来源切，A 插件的落点
@@ -7269,19 +6346,21 @@ else:
 
     # 接入方：登记与订阅**必须同一个来源串**。只声明一头 = 一件落点都收不到
     # = 永远不扣账 = 凭空复制（比扣错账更隐蔽：库存只多不少）。
-    if br:
-        _bsub = "AddResolvedHandler(CustomUIBridgePlugin.RelaySource" in strip_comments(br)
-        _btk = re.search(r"Track\(it,\s*\"stock\",\s*CustomUIBridgePlugin\.RelaySource\)",
-                         strip_comments(br)) is not None
-        if _bsub and _btk:
-            ok("接入自检登记与订阅用**同一个来源串**（只声明一头会让对账链静默断掉）")
+    #   判据**不点名任何插件**：来源串从消费者的订阅调用里**现取**，再要求 Track 用同一个。
+    if not _CHAVE:
+        skip("没扫到外部消费者 —— 跳过「登记/订阅同源」判据")
+    else:
+        _src_m = re.search(r"AddResolvedHandler\(\s*([A-Za-z_][\w.]*)\s*,", _CCODE)
+        if _src_m is None:
+            err("没有外部消费者按来源订阅（AddResolvedHandler(来源, …)）—— 对账链的外侧没人钉住")
+        elif re.search(r"Track\(\s*[^,]+,\s*[^,]+,\s*" + re.escape(_src_m.group(1)) + r"\s*\)", _CCODE):
+            ok("外部消费者登记与订阅用**同一个来源串**（只声明一头会让对账链静默断掉）")
         else:
-            err("桥接接入自检的登记/订阅来源不一致或没带来源 —— 对账链会静默断掉 / 或又退回全局订阅")
-        _brc = strip_comments(br)
-        if "ResolvedHandlerSources()" in _brc and "HasGlobalHandlers" in _brc:
-            ok("接入自检在运行期读来源清单/全局订阅者（这两个新公开面有人从外部钉住）")
+            err("外部消费者的登记/订阅来源不一致或没带来源 —— 对账链会静默断掉 / 或又退回全局订阅")
+        if "ResolvedHandlerSources()" in _CCODE and "HasGlobalHandlers" in _CCODE:
+            ok("外部消费者在运行期读来源清单/全局订阅者（这两个新公开面有人从外部钉住）")
         else:
-            err("接入自检没读 ResolvedHandlerSources/HasGlobalHandlers —— 新公开面没人从外部验证")
+            err("没有外部消费者读 ResolvedHandlerSources/HasGlobalHandlers —— 新公开面没人从外部验证")
 
 # -------------------- 27. 公开面：每个公开成员都得有人真的用过它 --------------------
 # 为什么要有这一节：公开面清单如果**手写在文档里**，立刻开始腐烂（同坑 #67）。
@@ -7349,22 +6428,10 @@ for _afn in FILES:
                     _akind = "inst"
                 _ai["members"].append((_ap.group(3), _akind))
 
-# ---- 外部消费者：只引用本 dll 的独立插件（它们才是"公开面真能用"的证据）----
-_consumers = {}
-_cb_file = os.path.join(HERE, "..", "CustomUIBridge-Source", "CustomUIBridge.cs")
-if os.path.isfile(_cb_file):
-    _consumers["接入自检"] = io.open(_cb_file, encoding="utf-8-sig", errors="replace").read()
-_ind_dir = os.path.join(HERE, "..", "Industrial-Source")
-if os.path.isdir(_ind_dir):
-    _itxt = []
-    for _if in sorted(os.listdir(_ind_dir)):
-        if _if.endswith(".cs"):
-            _itxt.append(io.open(os.path.join(_ind_dir, _if),
-                                 encoding="utf-8-sig", errors="replace").read())
-    if _itxt:
-        _consumers["下游"] = "\n".join(_itxt)
-if not _consumers:
-    err("找不到任何外部消费者源码 —— 公开面就没法被外部证明（接入自检 / 下游都该在）")
+# ---- 外部消费者：由环境变量 `CONSUMERS_DIR` 指过来（本仓库不点名任何插件）----
+#   `files()` = {相对路径: 文本}；它就是 `_api_used()` 要对照的那份"外部证据"。
+#   ⚠ 一个都没扫到 ⟹ 第 27 节的孤儿判据**跳过**（见下方 ③），绝不能报 FAIL。
+_consumers = _CONSUMERS.files()
 
 # ---- 例外表 ----
 # ★ 默认规则：**所有公开成员都按"接入面"处理** ⟹ 必须有外部消费者，否则 FAIL。
@@ -7467,11 +6534,15 @@ for _k in sorted(API_EXCEPTIONS):
         err("公开面例外表里的 `%s.%s` 在源码里找不到了 —— 它被改名或删掉了，表要跟着搬" % _k)
 
 # ② 总账（数字进报告，便于下一轮对比）
-ok("公开面共 %d 项（%d 个公开类型）；外部消费者 %s；例外登记 %d 项"
-   % (_api_total, len(_apimap), " / ".join(sorted(_consumers)), len(API_EXCEPTIONS)))
+ok("公开面共 %d 项（%d 个公开类型）；外部消费者 %d 个文件；例外登记 %d 项"
+   % (_api_total, len(_apimap), len(_consumers), len(API_EXCEPTIONS)))
 
 # ③ 接入面（= 没登记成例外的）必须至少被一个外部消费者真的调用过
-if _api_orphan:
+#   ⚠ 消费者缺失时**跳过**（外部使用者没有消费者目录 ⟹ 这里没有"外部证据"可对照，
+#     但**绝不能**把所有公开成员都报成孤儿 —— 那是把"没扫到"当成"写了没人用")。
+if not _consumers:
+    skip("没扫到外部消费者 —— 跳过「公开面有没有人真的用过它」（" + _CONSUMERS.summary() + "）")
+elif _api_orphan:
     err("以下 %d 个公开成员**没有任何外部消费者**（文档说能用 ≠ 真有插件在用）：%s"
         % (len(_api_orphan), ", ".join(sorted(_api_orphan))))
 else:
@@ -7484,21 +6555,24 @@ else:
 #   照验收提示去停鼠标必然一无所获（用户实测「哪个标题？没看到」，坑 #71）。
 #   ⟹ 钉死：证据走状态行（打开就有），且**不许**再往 TooltipHint 塞上下文
 #     （那是「自定义按键约定」的位置，语义挪用 = 下一个人会照着抄错）。
-_brtxt = strip_comments(_consumers.get("接入自检", ""))
-# ⚠ 判据必须**认块**、不能只看"字符串在不在"：`CtxSummary()` 在**方法定义处**也有，
-#   只查存在性的话，把调用点删掉照样通过（本轮第一版就是这么写的，阳性对照当场揭穿）。
-_sa_blk = re.search(r'statusA\.Text\s*=[^;]+;', _brtxt)
-_fp_blk = re.search(r'int fp = unchecked\([^;]+;', _brtxt)
-_ctx3 = ("c.Player" in _brtxt) and ("c.Drop" in _brtxt) and ("c.Asset" in _brtxt)
-if _ctx3 and _sa_blk and ("CtxSummary()" in _sa_blk.group(0)) \
-        and _fp_blk and ("CtxFingerprint()" in _fp_blk.group(0)):
-    ok("ctx 的 Player / Drop / Asset 三字段真被读，且**调用点**落在状态行（打开就有，不靠背包有东西）")
+if not _CHAVE:
+    skip("没扫到外部消费者 —— 跳过「ctx 三字段的调用点」两条")
 else:
-    err("ctx 三字段没被用上，或调用点没落在状态行/状态指纹上 —— Tooltip 只在有物品的格子上出现，空背包看不到")
-if re.search(r'TooltipHint\s*=\s*"ctx', _brtxt):
-    err("接入自检又把上下文塞进 TooltipHint 了 —— 那是「按键约定」的位置，且空背包时看不见")
-else:
-    ok("上下文没有塞进 TooltipHint（它只该放「按键约定」，且要挂格子）")
+    _brtxt = _CCODE
+    # ⚠ 判据必须**认块**、不能只看"字符串在不在"：`CtxSummary()` 在**方法定义处**也有，
+    #   只查存在性的话，把调用点删掉照样通过（本轮第一版就是这么写的，阳性对照当场揭穿）。
+    _sa_blk = re.search(r'statusA\.Text\s*=[^;]+;', _brtxt)
+    _fp_blk = re.search(r'int fp = unchecked\([^;]+;', _brtxt)
+    _ctx3 = ("c.Player" in _brtxt) and ("c.Drop" in _brtxt) and ("c.Asset" in _brtxt)
+    if _ctx3 and _sa_blk and ("CtxSummary()" in _sa_blk.group(0)) \
+            and _fp_blk and ("CtxFingerprint()" in _fp_blk.group(0)):
+        ok("ctx 的 Player / Drop / Asset 三字段真被读，且**调用点**落在状态行（打开就有，不靠背包有东西）")
+    else:
+        err("ctx 三字段没被用上，或调用点没落在状态行/状态指纹上 —— Tooltip 只在有物品的格子上出现，空背包看不到")
+    if re.search(r'TooltipHint\s*=\s*"ctx', _brtxt):
+        err("外部消费者又把上下文塞进 TooltipHint 了 —— 那是「按键约定」的位置，且空背包时看不见")
+    else:
+        ok("上下文没有塞进 TooltipHint（它只该放「按键约定」，且要挂格子）")
 
 
 out.append("")

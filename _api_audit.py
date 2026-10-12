@@ -15,7 +15,6 @@ except Exception:
     pass
 
 SRC_DIR = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(SRC_DIR)
 
 PUB_TYPE = re.compile(
     r'^    public\s+(?:static\s+|sealed\s+|abstract\s+|partial\s+|unsafe\s+)*'
@@ -68,13 +67,11 @@ for fn in sorted(os.listdir(SRC_DIR)):
             if mm:
                 info["members"].append((mm.group(3), "static" if mm.group(1) else "inst"))
 
-ind_dir = os.path.join(ROOT, "Industrial-Source")
-ind_files = ([os.path.join(ind_dir, f) for f in os.listdir(ind_dir) if f.endswith(".cs")]
-             if os.path.isdir(ind_dir) else [])
-consumers = {
-    "接入自检": read(os.path.join(ROOT, "CustomUIBridge-Source", "CustomUIBridge.cs")),
-    "下游": "\n".join(read(p) for p in ind_files),
-}
+# 消费者源码由 `_consumers` 统一扫（环境变量 CONSUMERS_DIR；本仓库**不点名任何插件**）。
+#   ⚠ 一个都没扫到 ⟹ 下面「零外部消费者」就是全部公开面 —— 这只是**探查工具**、不是门禁，
+#     所以不报错、不跳过逻辑（门禁在 `_check_customui.py`，那边消费者缺失走 SKIP）。
+import _consumers as _consumers_mod
+consumers = dict(_consumers_mod.files())
 
 
 def used_by(tname, mem, kind):

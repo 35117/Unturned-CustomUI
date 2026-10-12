@@ -23,7 +23,7 @@
 //  设计边界（重要）：
 //    · 本插件**不引用工业插件的任何类型**。它只认识「引擎储物」这一件事。
 //      依赖方向是单向的：工业用 [BepInDependency] 依赖本插件（2026-09-29 已落地，
-//      见 Industrial-Source/Industrial.CustomUi.cs）—— 本插件始终不认识工业。
+//      见下游插件自己的接入文件）—— 本插件始终不认识下游。
 //    · 数据层第一版完全交给引擎（Items / 关卡存档）。自管数据是后续阶段。
 //
 //  作者：35117    版本：见下方 `[BepInPlugin]` 第三参数（**唯一真源**，别在这儿再抄一遍）    编译：运行 build.bat
@@ -52,7 +52,7 @@ namespace CustomUI
         //   （实测：`26.10.3.37`–`.40` 四轮改动都忘了改版本号，文档一路写到 `.41` 才发现）。
         //   `_check_customui.py` 有一条门禁盯着「README 头部版本 == 这里」。
 
-        // PluginManager（插件管理）的分类标签 —— 没有标签的话本插件的配置会挤进
+        // 插件管理器的分类标签 —— 没有标签的话本插件的配置会挤进
         // 「未分类」，而且 string 配置只会渲染成手输框。
         // ⚠ 标签值必须与其他插件**同名**才能归到同一分类（同族插件用的是
         //   "Unturned.Category:通用设置"，这里保持一致，别自己造新词）。
@@ -65,7 +65,7 @@ namespace CustomUI
             return Category(categoryTag, description, null, extraTags);
         }
 
-        /// <summary>带候选值列表的版本：PluginManager 会据此渲染点击循环切换的标签。</summary>
+        /// <summary>带候选值列表的版本：插件管理器 会据此渲染点击循环切换的标签。</summary>
         private static ConfigDescription Cat(string categoryTag, string description,
             BepInEx.Configuration.AcceptableValueBase acceptableValues, params object[] extraTags)
         {
@@ -156,7 +156,7 @@ namespace CustomUI
                         "面板底色不透明就看不出来，半透明会隐约透出格子。改完**立即生效**。"));
 
                 // ⚠ DefaultView 带 AcceptableValueList + Unturned.Cycle：
-                //   PluginManager（插件管理）据此渲染成**点击循环切换**的标签
+                //   插件管理器据此渲染成**点击循环切换**的标签
                 //   （左键下一档、右键上一档），而不是让人手输字符串。
                 //   选项顺序就是循环顺序；值必须与 ApplyDefaultView 里的判据一致。
                 cfgDefaultView = Config.Bind("General", "DefaultView", "grid",
@@ -579,7 +579,7 @@ namespace CustomUI
         private const int VANILLA_RETRY_FRAMES = 30;
 
         // ---- 配置热生效 ----
-        // PluginManager（插件管理）改配置的方式是：写**内存里的 ConfigEntry** + 立刻 Save()，
+        // 插件管理器改配置的方式是：写**内存里的 ConfigEntry** + 立刻 Save()，
         // 既不重启进程、也**不回调插件**（它源码里没有任何 SettingChanged 事件）。
         // 所以"改了要重启才生效"从来不是它的限制，而是**本插件自己缓存了值**的限制
         // —— 原来 Awake 里 Enabled = cfgEnabled.Value 与 ApplyDefaultView() 各只跑一次。

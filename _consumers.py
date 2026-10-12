@@ -9,7 +9,7 @@
     CONSUMERS_DIR   逗号分隔的目录列表（可用环境变量覆盖）。
                     默认 `./consumers`（外部使用者把想检查的消费者子项目放这里）。
     本机开发时把两个外部消费者的**源码目录**指过来即可，**不必复制**（避免两份真源）：
-        set CONSUMERS_DIR=..\\CustomUIBridge-Source,..\\Industrial-Source
+        set CONSUMERS_DIR=..\\ConsumerA-Source,..\\ConsumerB-Source
 
 对外接口：
     files()            -> {相对路径: 源码文本}（只扫 .cs，跳过 bin/obj）
