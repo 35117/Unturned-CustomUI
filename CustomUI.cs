@@ -38,7 +38,7 @@ using UnityEngine;
 
 namespace CustomUI
 {
-    [BepInPlugin("com.trae.customui", "CustomUI 自定义交互界面", "26.10.3.71")]
+    [BepInPlugin("com.trae.customui", "CustomUI 自定义交互界面", "26.10.12.3")]
     public class CustomUIPlugin : BaseUnityPlugin
     {
         internal static CustomUIPlugin Instance;

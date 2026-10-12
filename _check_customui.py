@@ -12,7 +12,7 @@ CustomUI 插件自检（静态）
   7) ID / GUID 不撞现有插件
 输出：_check.txt（同时打印到 stdout）
 """
-import io, os, re, sys
+import datetime, io, os, re, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 GAME = os.path.dirname(HERE)
@@ -680,7 +680,7 @@ else:
 #   于是「文档说的版本」和「BepInEx 元数据/日志里的版本」能差四个小版本而没人察觉。
 #   这条门禁把两者钉在一起：**改版本号只改 [BepInPlugin]，README 头部跟着走**。
 _pver = re.search(r'BepInPlugin\("[^"]+",\s*"[^"]*",\s*"([^"]+)"\)', src.get("CustomUI.cs", ""))
-_rdp = os.path.join(HERE, "README.md")
+_rdp = os.path.join(HERE, "开发文档.md")
 _rdtxt = ""
 if os.path.exists(_rdp):
     with io.open(_rdp, "r", encoding="utf-8", errors="ignore") as f:
@@ -3504,6 +3504,42 @@ else:
     else:
         err("`ResolveInteractive` 的只读降级被动过 —— 放开 = 所有区块面板默认都能跨容器搬（红线扩散）")
 
+    # ---- 14.9u 版本号格式（★ 26.10.12.3：`年两位.月.日.当天第几个版本`）----
+    #   ★ 为什么要有这条：版本号散在**三个地方**（`CustomUI.cs` / 文档首行 / `发布说明` 的版本表），
+    #     旧格式 `26.10.3.71` 的第三段既不像日期也不像序号，人一眼看不出对错 ⟹ 迟早对不齐。
+    #   ⚠ 判据**不能锁"等于今天"** —— 版本号是**发布时**才改的，隔天没发版不该报红。
+    #     所以锁的是：**4 段** + **前 3 段构成合法日期** + **不晚于今天** + **第 4 段 ≥ 1**。
+    _br_path = os.path.join(GAME, "CustomUIBridge-Source", "CustomUIBridge.cs")
+    _ver_srcs = [("CustomUI.cs", src.get("CustomUI.cs", "")), ("探针 CustomUIBridge.cs", "")]
+    if os.path.exists(_br_path):
+        with io.open(_br_path, "r", encoding="utf-8", errors="ignore") as _bf:
+            _ver_srcs[1] = ("探针 CustomUIBridge.cs", _bf.read())
+    _today = datetime.date.today()
+    for (_tag, _txt) in _ver_srcs:
+        _m = re.search(r'BepInPlugin\(\s*"[^"]*"\s*,\s*"[^"]*"\s*,\s*"([0-9][0-9.]*)"', _txt)
+        if not _m:
+            err("读不出 " + _tag + " 的版本号 —— 版本格式判据失效（别让它静默跳过）")
+            continue
+        _v = _m.group(1)
+        _parts = _v.split(".")
+        _bad = None
+        if len(_parts) != 4:
+            _bad = "不是 4 段（年两位.月.日.当天第几个版本）"
+        else:
+            try:
+                _d = datetime.date(2000 + int(_parts[0]), int(_parts[1]), int(_parts[2]))
+            except ValueError:
+                _bad = "前 3 段不是合法日期"
+            else:
+                if _d > _today:
+                    _bad = "日期比今天还晚"
+                elif int(_parts[3]) < 1:
+                    _bad = "第 4 段（当天第几个版本）必须 ≥ 1"
+        if _bad is None:
+            ok(_tag + " 版本号格式正确：`" + _v + "`（年两位.月.日.当天第几个版本）")
+        else:
+            err(_tag + " 版本号 `" + _v + "` 不合规：" + _bad)
+
     # ---- 14.10 指纹纪律 ----
     for (sig, label) in [("private static int Fingerprint(", "Fingerprint"),
                          ("private static int MixItems(", "MixItems"),
@@ -3586,16 +3622,16 @@ else:
 
     # ---- 14.13 文档同步 ----
     rt = ""
-    rp = os.path.join(HERE, "README.md")
+    rp = os.path.join(HERE, "开发文档.md")
     if os.path.exists(rp):
         with io.open(rp, "r", encoding="utf-8") as f:
             rt = f.read()
     if "customui.blueprintview" in rt:
-        ok("README 写了蓝图视图")
+        ok("开发文档 写了蓝图视图")
     else:
         err("README 缺蓝图视图说明（customui.blueprintview）")
     if "IncludeActiveStorageContainer" in rt:
-        ok("README 写了「原版不从敞开的箱子里扣材料」这条口径")
+        ok("开发文档 写了「原版不从敞开的箱子里扣材料」这条口径")
     else:
         err("README 没写引擎消耗口径 —— 后来人会以为箱内材料齐就能合成")
     bat = os.path.join(HERE, "build.bat")
@@ -4482,7 +4518,7 @@ else:
         err("门面里出现 RemoveChild")
     # README 的接入示例必须用公开名，不能教第三方去调 internal
     _rd = ""
-    _rp = os.path.join(HERE, "README.md")
+    _rp = os.path.join(HERE, "开发文档.md")
     if os.path.exists(_rp):
         with io.open(_rp, "r", encoding="utf-8") as f:
             _rd = f.read()
@@ -5090,13 +5126,13 @@ if _slc21 is not None and "lastBpCategories" in _slc21 and "lastBpProducts" in _
 else:
     err("SyncLiveConfig 没跟 OnlyCategories / OnlyProducts —— 改了要重启才生效")
 _rt21 = ""
-_rp21 = os.path.join(HERE, "README.md")
+_rp21 = os.path.join(HERE, "开发文档.md")
 if os.path.exists(_rp21):
     with io.open(_rp21, "r", encoding="utf-8") as f:
         _rt21 = f.read()
 for _kw in ("StorageBlueprintFilters", "IStorageUiRegion", "SetRegionOrder", "RequestRegionsChanged"):
     if _kw in _rt21:
-        ok("README 写了 " + _kw)
+        ok("开发文档 写了 " + _kw)
     else:
         err("README 缺 " + _kw + " —— 这是给第三方插件用的公开 API，没文档等于没有")
 
@@ -5112,7 +5148,7 @@ out.append("22) 外部插件接入自检（CustomUIBridge）")
 BR = os.path.join(GAME, "CustomUIBridge-Source")
 BRCS = os.path.join(BR, "CustomUIBridge.cs")
 BRBAT = os.path.join(BR, "build.bat")
-BRRD = os.path.join(BR, "README.md")
+BRRD = os.path.join(BR, "README.md")   # 探针自己那个仍叫 README.md
 
 if os.path.exists(BRCS):
     with io.open(BRCS, "r", encoding="utf-8", errors="ignore") as f:
@@ -5180,7 +5216,7 @@ if br:
     #   ⟹ 只扫两处**当前状态**区：探针源码 + README §7。
     #     （§8 坑表与 §10 历史区里引用当时日志的数字是**历史事实**，不能删也不该判违规。）
     _rd22 = ""
-    _rp22 = os.path.join(HERE, "README.md")
+    _rp22 = os.path.join(HERE, "开发文档.md")
     if os.path.exists(_rp22):
         with io.open(_rp22, "r", encoding="utf-8") as f:
             _rd22 = f.read()
@@ -5336,7 +5372,7 @@ if br:
         with io.open(BRRD, "r", encoding="utf-8") as f:
             brrd = f.read()
         if "CustomUIBridgeMod.dll" in brrd and "接入自检" in brrd:
-            ok("桥接 README 写了产物与自检")
+            ok("桥接 开发文档 写了产物与自检")
         else:
             err("桥接 README 缺产物名或自检说明")
         if "未实测" in brrd or "未验证" in brrd:
@@ -5347,7 +5383,7 @@ if br:
         err("缺桥接 README（范例价值 = 没有）")
 
     _rt = ""
-    _rtp = os.path.join(HERE, "README.md")
+    _rtp = os.path.join(HERE, "开发文档.md")
     if os.path.exists(_rtp):
         with io.open(_rtp, "r", encoding="utf-8") as f:
             _rt = f.read()
@@ -5489,12 +5525,12 @@ else:
         err("桥接插件没用 StorageGridPanel —— 组件的外部可用性没人验证（坑 #45 的成因）")
 
     _rt23 = ""
-    _rp23 = os.path.join(HERE, "README.md")
+    _rp23 = os.path.join(HERE, "开发文档.md")
     if os.path.exists(_rp23):
         with io.open(_rp23, "r", encoding="utf-8") as f:
             _rt23 = f.read()
     if "StorageGridPanel" in _rt23:
-        ok("README 写了公开网格组件")
+        ok("开发文档 写了公开网格组件")
     else:
         err("README 缺 StorageGridPanel —— 第三方不知道有现成组件可用")
 
@@ -6093,12 +6129,12 @@ else:
     err("找不到桥接源码，无法验证扁平入口的外部可用性")
 
 _rt24 = ""
-_rp24 = os.path.join(HERE, "README.md")
+_rp24 = os.path.join(HERE, "开发文档.md")
 if os.path.exists(_rp24):
     with io.open(_rp24, "r", encoding="utf-8") as f:
         _rt24 = f.read()
     if "StorageSlotList" in _rt24:
-        ok("README 写了扁平槽位入口")
+        ok("开发文档 写了扁平槽位入口")
     else:
         err("README 缺 StorageSlotList —— 工业那边不知道该怎么交数据")
 
@@ -7024,7 +7060,7 @@ else:
 
     # ---- 文档 ----
     if "NoInlining" in _rt24 and "软依赖" in _rt24:
-        ok("README 写了软依赖的类型隔离（NoInlining）")
+        ok("开发文档 写了软依赖的类型隔离（NoInlining）")
     else:
         err("README 缺软依赖隔离的说明 —— 这是接 CustomUI 时最容易做错的一步")
 
