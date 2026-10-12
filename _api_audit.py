@@ -72,8 +72,8 @@ ind_dir = os.path.join(ROOT, "Industrial-Source")
 ind_files = ([os.path.join(ind_dir, f) for f in os.listdir(ind_dir) if f.endswith(".cs")]
              if os.path.isdir(ind_dir) else [])
 consumers = {
-    "探针": read(os.path.join(ROOT, "CustomUIBridge-Source", "CustomUIBridge.cs")),
-    "工业": "\n".join(read(p) for p in ind_files),
+    "接入自检": read(os.path.join(ROOT, "CustomUIBridge-Source", "CustomUIBridge.cs")),
+    "下游": "\n".join(read(p) for p in ind_files),
 }
 
 

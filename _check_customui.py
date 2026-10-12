@@ -467,7 +467,7 @@ if "PlayerInventory.STORAGE" in lv:
 else:
     w("交互页号可能硬编码")
 
-# ---- ★ 26.10.3.28：让「某些箱子保持原版」成为一件事（前置能力，不是工业侧改动）----
+# ---- ★ 26.10.3.28：让「某些箱子保持原版」成为一件事（前置能力，不是下游侧改动）----
 # 意义：本插件默认接管**所有** Storage 类路障（原版 46 种）。但"作为前置"时经常只需要
 # 在某几种箱子上用自绘界面，其余保持原版才对（原版手感 / 别的插件依赖原版网格 /
 # 玩家自己认得）。没有这条路时唯一的"不接管"办法是全局 Enabled=false —— 那是另一件事。
@@ -624,7 +624,7 @@ if os.path.exists(_brp31):
     with io.open(_brp31, "r", encoding="utf-8", errors="ignore") as f31:
         _brt31 = f31.read()
 if "StorageUiPanels.Detach(" in _brt31 and "StorageUiPanels.LastOpenReject" in _brt31:
-    ok("桥接探针真的调用了这两个新公开面（编译通过 = 外部可用）")
+    ok("接入自检真的调用了这两个新公开面（编译通过 = 外部可用）")
 else:
     err("桥接没用新公开面 —— 它的外部可用性没人验证")
 
@@ -711,9 +711,9 @@ if os.path.exists(datp):
     if m:
         i = int(m.group(1))
         if i >= 14081:
-            ok("测试机械 ID = " + str(i) + "（14081 起，未撞工业段）")
+            ok("测试机械 ID = " + str(i) + "（14081 起，未撞下游段）")
         else:
-            err("测试机械 ID " + str(i) + " 与工业段（14001-14080）冲突")
+            err("测试机械 ID " + str(i) + " 与下游段（14001-14080）冲突")
     else:
         err("TestStorage.dat 缺 ID 指令行")
     if re.search(r"^\s*Type\s+Storage\s*$", dt_code, re.M):
@@ -929,7 +929,7 @@ elif re.search(r"byte\s+cx\s*=\s*jar\.x", lv2):
 else:
     w("未识别行回调写法，请人工确认")
 
-# 9.14 指纹**绝不能**含 item.state —— 工业机械物品的 state 每一帧都在变，
+# 9.14 指纹**绝不能**含 item.state —— 下游机械物品的 state 每一帧都在变，
 #      入指纹会导致每帧 Rebuild → 每帧整行重建 → 图标（异步加载）永远显示不出来
 #      （实测：截图里所有图标空白，日志中同一个 id 反复出现即可确诊）。
 # ⚠ 参数列表用通配 `[^)]*`：本轮把 JarFingerprint(ItemJar) 改成 GroupFingerprint(ItemGroup)，
@@ -974,7 +974,7 @@ if m_rb is not None and "scroll.AddChild(" in m_rb.group(1):
 else:
     err("行没挂进滚动容器 —— 滚动条滚不动它们")
 
-# 9.16 ScrollView 必须设这两个开关（本项目工业插件的已验证用法）。
+# 9.16 ScrollView 必须设这两个开关（本项目下游插件的已验证用法）。
 #      缺 ScaleContentToWidth → 内容宽为 0 → 子元素 SizeScale_X=1 参照到 0 →
 #        **整行宽度塌成 0**：文字不渲染、Tooltip 落不到、行背景不可见；
 #        而图标是固定尺寸所以仍可见 —— 这个"只剩图标"的现象正是识别特征。
@@ -1203,7 +1203,7 @@ else:
 
     # 10.7d 格内文字行高必须 >= 24。
     #       实测把行高写成 13（ESleekFontSize.Small）时，格子里**一个字都不渲染**，
-    #       且不报任何错 —— 项目内已验证的小号标签最小高度是 24（工业插件 StatusH）。
+    #       且不报任何错 —— 项目内已验证的小号标签最小高度是 24（下游插件 StatusH）。
     #   ★ 26.10.3.66：行高从"写死常量"改成了"**下限** + 按 `LabelFontSize` 算" ⟹ 判据跟着升级：
     #     ① 三个**下限**常量都 ≥ 24；② 派生里确实**取较大者**（否则字号一调大文字就被挤掉）。
     _lows = re.findall(r"(?:NAME_MIN_H|INFO_MIN_H|MIN_ROW_HEIGHT)\s*=\s*(\d+(?:\.\d+)?)f",
@@ -1399,7 +1399,7 @@ out.append("")
 out.append("12) 合并同类显示")
 
 # 12.1 合并判据必须是「物品 ID + 耐久」，且**不得含 item.state**。
-#      为什么不能含 state：工业物品把 UID/电量这类数据存在 item.state 里（见项目记忆），
+#      为什么不能含 state：下游物品把 UID/电量这类数据存在 item.state 里（见项目记忆），
 #      每件都不同 → 带上它永远合并不了；而且 state 可能每帧变化 → 合并结果每帧抖动。
 #      它对玩家也是不可见的（图标/信息面板都不显示它）。
 if "GroupKey" in sh:
@@ -1410,7 +1410,7 @@ if "GroupKey" in sh:
     if m_gk is None:
         err("找不到 GroupKey 函数体，无法确认合并判据")
     elif re.search(r"item\.state", m_gk.group(1)):
-        err("合并判据里混进了 item.state —— 工业物品每件 state 都不同，会永远合并不了")
+        err("合并判据里混进了 item.state —— 下游物品每件 state 都不同，会永远合并不了")
     elif "item.id" in m_gk.group(1) and "quality" in m_gk.group(1) and "idOnly" in m_gk.group(1):
         ok("合并判据 = 物品 ID（+耐久，除非调用点要只按 ID），不含 state")
     else:
@@ -2382,7 +2382,7 @@ else:
         #    反向锁：源码里不许出现 `SleekColor?` —— 见坑 #82：`SleekColor` 有到 `StyleColor`
         #    的隐式转换，可空类型会让编译器去找"提升转换" ⟹ 调用方被要求引用
         #    `UnityEngine.UIElementsModule` ⟹ **外部程序集编译不过**；而本插件引用了那个程序集、
-        #    自己照样编译过 ⟹ **单程序集自检发现不了**（这正是本探针存在的理由）。
+        #    自己照样编译过 ⟹ **单程序集自检发现不了**（这正是本接入自检存在的理由）。
         #   ⚠ 名字必须**整词**匹配 —— 第一版写成 `"public SleekColor FillColor" in _icoc`，
         #     被 `FillColorBak` 这种改名满足 ⟹ 阳性对照当场抓出来（又是老坑 #77 的前缀假绿）。
         if re.search(r"public\s+SleekColor\s+FillColor\b", _icoc):
@@ -2989,7 +2989,7 @@ else:
 
     # ---- 14.9o 「常驻右列区块」样板基类（★ 26.10.3.60 公开面 `StorageUiRegionBase`）----
     #   存在的理由：往右列区块栈加一块面板要守**四条规矩**（只藏不拆 / 判代 / `Tick` 守卫 /
-    #   失败自拆），而接入方那边是**一模一样**的四段样板 —— 探针自己就抄了四遍。
+    #   失败自拆），而接入方那边是**一模一样**的四段样板 —— 接入自检自己就抄了四遍。
     #   ⟹ 判据必须钉住「这四条规矩**真的在里面**」：基类退化成空壳比没有基类**更糟**
     #     （接入方以为它管了，于是四处都不再自查）。
     _reg_src = src.get("CustomUI.Region.cs", "")
@@ -3394,7 +3394,7 @@ else:
     # ★ 26.10.3.68：**顺序语义**必须写清参照物（用户实测把「之上」读成「排到原版网格上方」）。
     #   ① 整栈起点**不许按 region 顺序分叉** —— 并存时一律在原版网格下方（原版网格的 y 改不了）；
     #   ② 常量注释里必须点明参照物是「**箱内物品**」（不是原版网格）；
-    #   ③ 探针状态行是**玩家看得到**的那份文案 ⟹ 它也必须带参照物（证据与结论同型，铁律 #7）。
+    #   ③ 接入自检状态行是**玩家看得到**的那份文案 ⟹ 它也必须带参照物（证据与结论同型，铁律 #7）。
     _ym = re.search(r"float y = ([^;]+);", _ls) if _ls else None
     if _ym is not None and "Order" not in _ym.group(1) \
             and "VanillaGridBlockHeight()" in _ym.group(1):
@@ -3402,7 +3402,7 @@ else:
     else:
         err("整栈起点按顺序分叉了（或没算并存段）—— 并存时要排到原版网格上方做不到，只会重叠")
     #   ⚠⚠ 这条要看**注释** ⟹ 必须用**原始源码**（`strip_comments` 会把注释删掉，
-    #      第一条版本就是这么假红的）；探针源码不在 `src` 里 ⟹ 得按路径单独读。
+    #      第一条版本就是这么假红的）；接入自检源码不在 `src` 里 ⟹ 得按路径单独读。
     _prov_raw = src.get("CustomUI.Provider.cs", "")
     #   ⚠ 只取**紧邻这个常量的那段注释**：
     #     窗口太小 ⟹ 假红（那段注释比 400 字长）；
@@ -3421,9 +3421,9 @@ else:
         with io.open(_brp, "r", encoding="utf-8", errors="ignore") as _bf:
             _br_raw = _bf.read()
     if "（栈内：主面板之上）" in _br_raw and "整栈在原版网格下" in _br_raw:
-        ok("探针状态行写清了参照物（`栈内：主面板之上` + 并存时补 `整栈在原版网格下`）")
+        ok("接入自检状态行写清了参照物（`栈内：主面板之上` + 并存时补 `整栈在原版网格下`）")
     else:
-        err("探针状态行只写「之上/之下」—— 玩家会把参照物读成原版网格（用户实测误读过）")
+        err("接入自检状态行只写「之上/之下」—— 玩家会把参照物读成原版网格（用户实测误读过）")
 
     # ---- 14.9s 就地取回（★ 26.10.3.69：`StorageUiPanels.TryTakeToBackpackFrom`）----
     #   ★★ 这是**唯一碰"防刷物品"红线**的公开面 ⟹ 四条缺一不可：
@@ -3510,10 +3510,10 @@ else:
     #   ⚠ 判据**不能锁"等于今天"** —— 版本号是**发布时**才改的，隔天没发版不该报红。
     #     所以锁的是：**4 段** + **前 3 段构成合法日期** + **不晚于今天** + **第 4 段 ≥ 1**。
     _br_path = os.path.join(GAME, "CustomUIBridge-Source", "CustomUIBridge.cs")
-    _ver_srcs = [("CustomUI.cs", src.get("CustomUI.cs", "")), ("探针 CustomUIBridge.cs", "")]
+    _ver_srcs = [("CustomUI.cs", src.get("CustomUI.cs", "")), ("接入自检 CustomUIBridge.cs", "")]
     if os.path.exists(_br_path):
         with io.open(_br_path, "r", encoding="utf-8", errors="ignore") as _bf:
-            _ver_srcs[1] = ("探针 CustomUIBridge.cs", _bf.read())
+            _ver_srcs[1] = ("接入自检 CustomUIBridge.cs", _bf.read())
     _today = datetime.date.today()
     for (_tag, _txt) in _ver_srcs:
         _m = re.search(r'BepInPlugin\(\s*"[^"]*"\s*,\s*"[^"]*"\s*,\s*"([0-9][0-9.]*)"', _txt)
@@ -3546,7 +3546,7 @@ else:
                          ("private static int TextFingerprint(", "TextFingerprint")]:
         b = body_of(sig, label)
         if ".state" in b:
-            err(label + " 指纹混进 state —— 工业物品 state 每帧变会导致每帧重建")
+            err(label + " 指纹混进 state —— 下游物品 state 每帧变会导致每帧重建")
         elif "jar.x" in b or "jar.y" in b:
             err(label + " 指纹含坐标 —— 蓝图列表不按坐标排，只会造成无谓重建")
         else:
@@ -3708,19 +3708,19 @@ else:
         else:
             err("没有公开结构体 StorageBlueprintViewInfo —— 快照类型拿不到，等于没公开")
 
-        # 探针要真的读它（同坑 #45/#49：公开面没人从外部用 → 等于没公开）。
-        # ⚠ 这里**就地读**探针源码：`br` 变量要到第 22 节才赋值，本节（14）用不了。
+        # 接入自检要真的读它（同坑 #45/#49：公开面没人从外部用 → 等于没公开）。
+        # ⚠ 这里**就地读**接入自检源码：`br` 变量要到第 22 节才赋值，本节（14）用不了。
         #   ⚠ 文件不存在时**必须 err**（WARN = 静默跳过 = 等于没这条判据）。
         _brpath = os.path.join(GAME, "CustomUIBridge-Source", "CustomUIBridge.cs")
         if not os.path.exists(_brpath):
-            err("找不到接入探针 " + _brpath + " —— 这条判据没法验（别静默跳过）")
+            err("找不到接入接入自检 " + _brpath + " —— 这条判据没法验（别静默跳过）")
         else:
             with io.open(_brpath, "r", encoding="utf-8", errors="ignore") as f:
                 _brloc = strip_comments(f.read())
             if "StorageBlueprintView.Current" in _brloc:
-                ok("桥接探针在运行期读蓝图配置快照（新公开面有人从外部钉住）")
+                ok("接入自检在运行期读蓝图配置快照（新公开面有人从外部钉住）")
             else:
-                err("桥接探针没读 StorageBlueprintView.Current —— 新公开面没人从外部验证")
+                err("接入自检没读 StorageBlueprintView.Current —— 新公开面没人从外部验证")
 
 # ---------------------- 15. 常驻面板（只藏不拆）与接管回退链
 out.append("")
@@ -5148,7 +5148,7 @@ out.append("22) 外部插件接入自检（CustomUIBridge）")
 BR = os.path.join(GAME, "CustomUIBridge-Source")
 BRCS = os.path.join(BR, "CustomUIBridge.cs")
 BRBAT = os.path.join(BR, "build.bat")
-BRRD = os.path.join(BR, "README.md")   # 探针自己那个仍叫 README.md
+BRRD = os.path.join(BR, "README.md")   # 接入自检自己那个仍叫 README.md
 
 if os.path.exists(BRCS):
     with io.open(BRCS, "r", encoding="utf-8", errors="ignore") as f:
@@ -5159,11 +5159,11 @@ else:
     err("找不到 CustomUIBridge-Source/CustomUIBridge.cs —— 公开面又没人从外部验证了")
 
 # ⚠ 中转页（借道用的临时 Items）尺寸必须跟着物品走，不能"开大一点省事"。
-#   实测：探针写死 resize(32, 32) = 1024 格，接管前那一帧原版把右列画满了
+#   实测：接入自检写死 resize(32, 32) = 1024 格，接管前那一帧原版把右列画满了
 #   （用户报"一瞬间的超大箱子栏位"），借道没关干净时那一坨还会常驻背包界面。
 if br:
     if re.search(r"resize\(\s*32\s*,\s*32\s*\)", br):
-        err("桥接探针仍把中转页写死成 32×32 —— 会闪一帧原版超大网格")
+        err("接入自检仍把中转页写死成 32×32 —— 会闪一帧原版超大网格")
     else:
         ok("中转页不再写死 32×32")
     _pv = fn_body(br, "private void ProbeVirtual(", "Bridge.ProbeVirtual")
@@ -5176,44 +5176,44 @@ if br:
     # 一条消息只说一个原因（坑 #58）：GrabFromStorage 只返回 bool，
     # 把"没找到"和"找到了但拖拽失败"混成一句 = 给排查留假线索。
     if _pv is not None and "StillInRelayPage(" in _pv:
-        ok("探针先自查物品是否还在中转页，再决定报哪句话（两种失败不混报）")
+        ok("接入自检先自查物品是否还在中转页，再决定报哪句话（两种失败不混报）")
     else:
         err("ProbeVirtual 又用同一个 false 报两种原因了")
-    # ⑩ 状态查询面（26.10.3.37）：探针必须**真的读**这 4 个新公开面 ——
+    # ⑩ 状态查询面（26.10.3.37）：接入自检必须**真的读**这 4 个新公开面 ——
     #   既是编译期约束（碰 internal 就编译不过），运行期还会显示在自检结果里。
     _q = fn_body(br, "private void RunSelfCheck(", "Bridge.RunSelfCheck")
     if _q is not None and "StorageUiPanels.IsOpen" in _q \
             and "StorageUiPanels.ActiveProviderId" in _q \
             and "StorageUiPanels.IsRegionAttached(" in _q \
             and "StorageUiPanels.CurrentVirtualTag" in _q:
-        ok("桥接探针运行期读了状态查询面（IsOpen / ActiveProviderId / IsRegionAttached / CurrentVirtualTag）")
+        ok("接入自检运行期读了状态查询面（IsOpen / ActiveProviderId / IsRegionAttached / CurrentVirtualTag）")
     else:
-        err("桥接探针没读全状态查询面 —— 这 4 个新公开面又没人从外部验证了")
+        err("接入自检没读全状态查询面 —— 这 4 个新公开面又没人从外部验证了")
     if _q is not None and "StorageUiPanels.Notify(" in _q \
             and "StorageUiPanels.CurrentNotice" in _q \
             and "StorageUiPanels.ClearNotice(" in _q:
-        ok("桥接探针运行期跑了临时提示面（发 → 读回 → 收掉，三件都真调了）")
+        ok("接入自检运行期跑了临时提示面（发 → 读回 → 收掉，三件都真调了）")
     else:
-        err("桥接探针没跑全临时提示面（Notify / CurrentNotice / ClearNotice）")
+        err("接入自检没跑全临时提示面（Notify / CurrentNotice / ClearNotice）")
     if _q is not None and "UsableAsContainer" in _q and "WantsRegions" in _q:
-        ok("桥接探针运行期读了语义化页面判据（UsableAsContainer / WantsRegions）")
+        ok("接入自检运行期读了语义化页面判据（UsableAsContainer / WantsRegions）")
     else:
-        err("桥接探针没读语义化页面判据 —— 这 2 个新公开面又没人从外部验证了")
+        err("接入自检没读语义化页面判据 —— 这 2 个新公开面又没人从外部验证了")
     # ⚠ 「同一帧内完成」物理上看不见（坑 #53 的原话，坑 #65 又撞一次）——
-    #   探针必须**留一条**提示给宿主写标题栏：最后一次 Notify 要排在最后一次 ClearNotice 之后。
+    #   接入自检必须**留一条**提示给宿主写标题栏：最后一次 Notify 要排在最后一次 ClearNotice 之后。
     if _q is not None:
         _ln = _q.rfind("StorageUiPanels.Notify(")
         _lc = _q.rfind("StorageUiPanels.ClearNotice(")
         if _lc < 0:
-            err("探针根本没调 ClearNotice —— 「收不掉」那条语义就没验")
+            err("接入自检根本没调 ClearNotice —— 「收不掉」那条语义就没验")
         elif _ln > _lc:
-            ok("探针留了一条提示给宿主写标题栏（不是发完当场清 —— 那样画面上看不见）")
+            ok("接入自检留了一条提示给宿主写标题栏（不是发完当场清 —— 那样画面上看不见）")
         else:
-            err("探针最后一次 Notify 之后又清了 —— 同一帧内完成，玩家根本看不到（坑 #53 / #65）")
+            err("接入自检最后一次 Notify 之后又清了 —— 同一帧内完成，玩家根本看不到（坑 #53 / #65）")
     # ⛔ 门禁：不许写死自检的分母。
     #   坑 #53 = "把能算出来的数写死在标签里"；坑 #64 = 它的**注释版** ——
-    #   探针头注释写着"7 条断言"、实际早就是 12 条，照着它改验收项又错一轮。
-    #   ⟹ 只扫两处**当前状态**区：探针源码 + README §7。
+    #   接入自检头注释写着"7 条断言"、实际早就是 12 条，照着它改验收项又错一轮。
+    #   ⟹ 只扫两处**当前状态**区：接入自检源码 + README §7。
     #     （§8 坑表与 §10 历史区里引用当时日志的数字是**历史事实**，不能删也不该判违规。）
     _rd22 = ""
     _rp22 = os.path.join(HERE, "开发文档.md")
@@ -5360,12 +5360,12 @@ if br:
         ok("有「把我挪到最下面」这种留状态的按钮（外部改布局才能被肉眼看到）")
     else:
         err("缺跨帧的顺序覆盖按钮 —— 验收项「看着它跳」物理上不可能成立")
-    # 探针值不能与玩家开关用的值撞车（撞了会把玩家的 pin 解掉并误判 FAIL）
+    # 接入自检值不能与玩家开关用的值撞车（撞了会把玩家的 pin 解掉并误判 FAIL）
     if "before >= PIN_DOWN_ORDER ? -950 : PIN_DOWN_ORDER" in brc and \
             "if (pinnedDown) StorageUiRegistry.SetRegionOrder(Id, PIN_DOWN_ORDER);" in brc:
-        ok("自检探针避开 pin 值，且撤探针后还原玩家自己的开关状态")
+        ok("自检接入自检避开 pin 值，且撤接入自检后还原玩家自己的开关状态")
     else:
-        err("自检的顺序探针会踩掉玩家的 pin（症状：点完自检摆放就复位 + 误报 FAIL）")
+        err("自检的顺序接入自检会踩掉玩家的 pin（症状：点完自检摆放就复位 + 误报 FAIL）")
 
     # 文档：桥接的 README + CustomUI 侧的指路
     if os.path.exists(BRRD):
@@ -5569,7 +5569,7 @@ else:
             _k27_bad.append(_p27 + "(setter 没比对新值)")
     if _k27_bad:
         err("这些旋钮的 setter 不合格：" + "、".join(_k27_bad) +
-            " —— 要么不会生效，要么每次赋值都标脏（工业侧每帧重设 = 每帧重建）")
+            " —— 要么不会生效，要么每次赋值都标脏（下游侧每帧重设 = 每帧重建）")
     else:
         ok("八个旋钮/回调的 setter 都是「值变了才 MarkDirty()」（设了即生效，且不会每帧重建）")
 
@@ -5613,15 +5613,15 @@ else:
     else:
         ok("网格/列表组件在「拆面板 / 改版面」时先记滚动位置，挂载后写回（且写回有帧数上限）")
 
-    # ---- ★ 26.10.3.47：探针的四个演示区块必须**默认关闭**（正式版不该挂测试内容）----
-    _brc = strip_comments(br)   # ⚠ 第 22 节已读过探针源码（`br` 在本文之前定义）
+    # ---- ★ 26.10.3.47：接入自检的四个演示区块必须**默认关闭**（正式版不该挂测试内容）----
+    _brc = strip_comments(br)   # ⚠ 第 22 节已读过接入自检源码（`br` 在本文之前定义）
     _br_on = re.findall(r'Config\.Bind\("Bridge",\s*"(ShowRegion|ShowBackpackGrid|'
                         r'ShowFlatSlots|ShowListPanel)",\s*true', _brc)
     if _br_on:
-        err("探针的演示区块又被默认打开了：" + "、".join(sorted(set(_br_on))) +
+        err("接入自检的演示区块又被默认打开了：" + "、".join(sorted(set(_br_on))) +
             " —— 正式版打开箱子时右侧不该多出测试内容（用户 2026-10-08 明确）")
     else:
-        ok("探针的四个演示区块默认关闭（验收时到 cfg 里打开，不改代码）")
+        ok("接入自检的四个演示区块默认关闭（验收时到 cfg 里打开，不改代码）")
 
     _m27_empty = re.search(
         r"if \(count == 0\)([\s\S]{0,900}?)else if \(emptyLabel != null\)", _k27)
@@ -5697,7 +5697,7 @@ else:
     #   ⚠ 入口演示的是**接入方真会做的事**（改 Title / 清空自己的数据源），
     #     不是"挑一个刚好能看出变化的旋钮"（用户 2026-10-05 明确否掉了拿 Columns 充数）。
     if "grid.OnSlotClicked" in _brt and "BridgeGridRegion" in _brt:
-        ok("桥接探针给「二维 Items 源 + 回调」挂了真回调（§7 第 181 条的验收入口）")
+        ok("接入自检给「二维 Items 源 + 回调」挂了真回调（§7 第 181 条的验收入口）")
     else:
         err("桥接没挂二维源的回调 —— §7 第 181 条将无从验证")
     if "ToggleKnobs" in _brt and "Grid.Title" in _brt and "SetDataCleared" in _brt:
@@ -5794,7 +5794,7 @@ else:
     # 打字过程中结果一会儿有一会儿没。真因：`Consume` 只有「吃掉整个读音」与
     # 「只吃首字母」两条路，而 `sh` 两头不靠 ⟹ **破坏了前缀单调性**。
     # ⟹ 改成"这个字可以贡献它读音的 1..全长 个字符"（两条路分别是它的特例）。
-    # 实测证据：一次性探针跑 32 条断言全过（ji/jinsh/jshuban/jsban/jinsb/jshuba + 单调性 + 不该匹配的）。
+    # 实测证据：一次性接入自检跑 32 条断言全过（ji/jinsh/jshuban/jsban/jinsb/jshuba + 单调性 + 不该匹配的）。
     _cs30 = fn_body(_sh29, "private static bool Consume", "Consume")
     if _cs30 is not None:
         _c30 = strip_comments(_cs30)
@@ -6053,7 +6053,7 @@ if "internal List<ItemJar> Jars" in gp24:
 else:
     err("Jars 暴露成 public 了 —— 外部能直接改内部列表")
 
-# 外部消费者真的按"工业形态"用它（交 Item，不是 jar）
+# 外部消费者真的按"下游形态"用它（交 Item，不是 jar）
 _brf = ""
 _brfp = os.path.join(GAME, "CustomUIBridge-Source", "CustomUIBridge.cs")
 if os.path.exists(_brfp):
@@ -6061,7 +6061,7 @@ if os.path.exists(_brfp):
         _brf = f.read()
     _brfc = strip_comments(_brf)
     if "new StorageSlotList()" in _brfc and "slots.Add(jar.item)" in _brfc:
-        ok("桥接按工业形态交数据（一串 Item，不是 jar）—— 扁平入口对外真的可用")
+        ok("桥接按下游形态交数据（一串 Item，不是 jar）—— 扁平入口对外真的可用")
     else:
         err("桥接没用扁平入口（或交的是 jar）—— E'-1 的外部可用性没人验证")
     if "grid.Refresh(slots)" in _brfc:
@@ -6136,18 +6136,18 @@ if os.path.exists(_rp24):
     if "StorageSlotList" in _rt24:
         ok("开发文档 写了扁平槽位入口")
     else:
-        err("README 缺 StorageSlotList —— 工业那边不知道该怎么交数据")
+        err("README 缺 StorageSlotList —— 下游那边不知道该怎么交数据")
 
-# -------------------- 25. 工业接入（E'-2：真实外部消费者 + 软依赖隔离）
+# -------------------- 25. 下游接入（E'-2：真实外部消费者 + 软依赖隔离）
 out.append("")
-out.append("25) 工业接入 CustomUI（E'-2）")
+out.append("25) 下游接入 CustomUI（E'-2）")
 
 IND = os.path.join(GAME, "Industrial-Source")
 IND_MAIN = os.path.join(IND, "Industrial.cs")
 IND_BRIDGE = os.path.join(IND, "Industrial.CustomUi.cs")
 
 if not os.path.exists(IND_BRIDGE):
-    err("缺 Industrial.CustomUi.cs —— 工业侧接入没落地")
+    err("缺 Industrial.CustomUi.cs —— 下游侧接入没落地")
 else:
     with io.open(IND_BRIDGE, "r", encoding="utf-8", errors="ignore") as f:
         indbr = f.read()
@@ -6157,19 +6157,23 @@ else:
     main_code = strip_comments(indmain)
 
     # ---- 依赖声明 ----
-    if re.search(r'\[BepInDependency\("com\.trae\.customui",\s*'
+    # ★ 26.10.12.3：GUID 改成了 `com.35117.customui` ⟹ 判据**从真源读 GUID**，
+    #   别再硬编码第二份（GUID 一改就得记得改判据 —— 正是"同一事实写两处"那条坑）。
+    _guid_m = re.search(r'BepInPlugin\(\s*"([^"]+)"', src.get("CustomUI.cs", ""))
+    _guid = _guid_m.group(1) if _guid_m else "com.35117.customui"
+    if re.search(r'\[BepInDependency\("' + re.escape(_guid) + r'",\s*'
                  r'BepInDependency\.DependencyFlags\.SoftDependency\)\]', main_code):
-        ok("工业声明了对 CustomUI 的**软**依赖（没装也必须能跑，所以不能是硬依赖）")
+        ok("下游声明了对 CustomUI 的**软**依赖（没装也必须能跑，所以不能是硬依赖）")
     else:
-        err("工业没声明软依赖 CustomUI")
+        err("下游没声明软依赖 CustomUI")
 
-    # 方向铁律：CustomUI 是前置，不许认识工业
+    # 方向铁律：CustomUI 是前置，不许认识下游
     cu_all = "".join([src.get(f, "") for f in FILES])
     cu_code = strip_comments(cu_all)
     if "Industrial" in cu_code or "com.trae.industrial" in cu_code:
-        err("CustomUI 侧出现了工业的名字 —— 依赖方向反了（前置不认识上层，见 README §1）")
+        err("CustomUI 侧出现了下游的名字 —— 依赖方向反了（前置不认识上层，见 README §1）")
     else:
-        ok("依赖方向仍是单向：CustomUI 不认识工业（前置定位没破）")
+        ok("依赖方向仍是单向：CustomUI 不认识下游（前置定位没破）")
 
     # ---- ★ 软依赖下的类型隔离（缺一条，没装 CustomUI 的玩家就会炸在 Awake）----
     if "[MethodImpl(MethodImplOptions.NoInlining)]" in br_code and \
@@ -6233,7 +6237,7 @@ else:
 
     _f = re.search(r"TryOpenDigitalBox\(AimedNode, inst\)", main_code)
     if _f is not None and "DigitalUI.OpenMain(AimedNode, inst)" in main_code:
-        ok("F 键：借道界面失败/不可用时**退回工业自绘旧界面**（软依赖下不能只有一条路）")
+        ok("F 键：借道界面失败/不可用时**退回下游自绘旧界面**（软依赖下不能只有一条路）")
     else:
         err("F 键的退回路径不完整（借道打不开时玩家就没有任何数字箱界面了）")
     # ⚠ 这条是本轮最容易漏的：JIT 在方法**首次被调用**时编译整个方法体，
@@ -6260,7 +6264,7 @@ else:
     #   实测指纹：从世界按 F 一切正常（没箱子开着、不走那条路），
     #   而**从别的箱子的只读预览点进去**（§7 第 133 条）变成空界面 —— 只坏一条路径。
     if "sessionDrop" in br_code or "SessionToken" in br_code:
-        err("工业又用字段存借道会话身份了（sessionDrop/SessionToken）—— 会被重入的 Close() 抹掉")
+        err("下游又用字段存借道会话身份了（sessionDrop/SessionToken）—— 会被重入的 Close() 抹掉")
     else:
         ok("借道会话身份只经 ctx.Tag 传递，没有可被 Close 抹掉的字段")
 
@@ -6316,7 +6320,7 @@ else:
         else:
             err("Tick 没区分会话模式 —— 玩家一动就换内容，扣账就扣到别的磁盘上")
         # ⚠ 主面板 Provider 必须**自己**把面板挂进右列存储位；区块(region)才由宿主区块栈挂。
-        #   这个类两种身份都有，提升成 Provider 时漏了这一句 ⟹ 探针实测
+        #   这个类两种身份都有，提升成 Provider 时漏了这一句 ⟹ 接入自检实测
         #   "isOpen/dashboard.active/VirtualActive 全 True，但 panel=null"，
         #   玩家看到的就是"按 F 什么都没打开"（2026-10-04 绕了三轮才定到这里）。
         if "StorageUiPanels.Attach(" in _tb2:
@@ -6408,7 +6412,7 @@ else:
     else:
         err("OnSlot 没分流存入 —— 一格两义说了却没接")
     if "TryGetHeldItem(" in br_code and "EndHeldItem()" in br_code:
-        ok("工业作为外部程序集用上了新的公开面（TryGetHeldItem / EndHeldItem）")
+        ok("下游作为外部程序集用上了新的公开面（TryGetHeldItem / EndHeldItem）")
     else:
         err("公开面 TryGetHeldItem/EndHeldItem 没有外部消费者钉住")
 
@@ -6425,9 +6429,9 @@ else:
     else:
         err("头部仍然只用自己的估算 —— 显示的数字不是做判断的那个数")
     if "slots.OccupiedCells = st.Used" in br_code:
-        ok("工业把 st.Used（判定用的那个数）交给头部显示")
+        ok("下游把 st.Used（判定用的那个数）交给头部显示")
     else:
-        err("工业没把真源占用传给面板 —— 头部会继续低报")
+        err("下游没把真源占用传给面板 —— 头部会继续低报")
 
     # ---- ★ 弹匣 = 不可分物品（2026-10-04 用户实测：存 30 发要 30 格、取出变成 1 发匣）----
     _sz = re.search(r"internal int DigitalItemSize\(Item it\)[\s\S]*?\n        \}", indmain)
@@ -6589,9 +6593,9 @@ else:
         else:
             err("CustomUI 的内容量判据没走 FillTargetItem —— 又回到靠类型/靠猜")
         if "EBlueprintOperation.FillTargetItem" in _cc_ind and "IsItem(a)" in _cc_ind:
-            ok("工业侧同源同判据（主文件不能引用 CustomUI 类型，但推导的是同一份引擎数据）")
+            ok("下游侧同源同判据（主文件不能引用 CustomUI 类型，但推导的是同一份引擎数据）")
         else:
-            err("工业侧判据与 CustomUI 不同源 —— 两边迟早对「什么算一箱」给出不同答案")
+            err("下游侧判据与 CustomUI 不同源 —— 两边迟早对「什么算一箱」给出不同答案")
         # 反向：不许把 5 个弹药箱 ID 硬编码进判据
         if re.search(r"\b(119|43|44|1192|1193)\b\s*[,)=]", _cc_ui + _cc_ind):
             err("内容量判据里出现了硬编码物品 ID —— 换存档/加模组就漏，必须按行为推导")
@@ -6613,14 +6617,14 @@ else:
             ok("不可分 = 类型三项 ∪ 内容量类（弹匣类型判据保留，模组弹匣没配方也不会漏）")
         else:
             err("不可分判据变了 —— 类型三项与内容量类必须**并集**，且不能删掉弹匣类型判据")
-    # ---- ★ 内容包不变量：工业物品**一律不可堆叠**（用户 2026-10-05 定的产品决定）------
+    # ---- ★ 内容包不变量：下游物品**一律不可堆叠**（用户 2026-10-05 定的产品决定）------
     #   一格最大 1 件。这条不是风格：它把"记账件数 vs 真实堆叠"那一整族歧义从源头消掉，
     #   代价是数字磁盘的占用口径会变（DigitalItemSize 按 ceil(件数/上限) 分组收费），
     #   所以必须有个检查钉住它，别哪天新加物品又写回 Amount 8。
     _ind_items = os.path.join(GAME, "Sandbox", "Industrial", "Items")
     if not os.path.isdir(_ind_items):
         # ⚠ 发 WARN 的函数叫 w()，warn 是计数器（本项目踩过一次 NameError 类的坑）
-        w("找不到工业内容包 Items 目录，跳过「不许堆叠」不变量检查")
+        w("找不到下游内容包 Items 目录，跳过「不许堆叠」不变量检查")
     else:
         _stacky = []
         _dat_n = 0
@@ -6644,18 +6648,18 @@ else:
                 if _m is not None and int(_m.group(1)) > 1:
                     _stacky.append(_dn + "=" + _m.group(1))
         if _stacky:
-            err("工业内容包里有可堆叠物品（用户要求一格最大 1 件）：" + "、".join(_stacky))
+            err("下游内容包里有可堆叠物品（用户要求一格最大 1 件）：" + "、".join(_stacky))
         else:
-            ok("工业内容包 %d 个 dat 全部不可堆叠（无 Amount>1）" % _dat_n)
+            ok("下游内容包 %d 个 dat 全部不可堆叠（无 Amount>1）" % _dat_n)
     if "public static bool IsMergeableContentPage(Item item)" in cprov:
         ok("「哪些弹匣允许并格」经公开面暴露（调用方不必重述判据）")
     else:
-        err("缺公开查询 IsMergeableContentPage —— 工业只能自己写一份，两边迟早漂")
+        err("缺公开查询 IsMergeableContentPage —— 下游只能自己写一份，两边迟早漂")
     if "is ItemMagazineAsset" in br_code:
-        err("工业桥接自己重述了弹匣判据 —— 显示层并的格与数据层挑的匣会有两个答案，" +
+        err("下游桥接自己重述了弹匣判据 —— 显示层并的格与数据层挑的匣会有两个答案，" +
             "漂了就是「界面写 6 匣、点下去只认第一条」")
     else:
-        ok("工业桥接零重述弹匣判据（只调 StorageUiPanels.IsMergeableContentPage）")
+        ok("下游桥接零重述弹匣判据（只调 StorageUiPanels.IsMergeableContentPage）")
     if "slots.MergeContentPages = ContentPagesMerged()" in br_code:
         ok("数字箱按配置决定弹匣密度（读同一份配置，不写死）")
     else:
@@ -6723,10 +6727,10 @@ else:
             ok("两个插件的「不可分」判据列出同一批资产类型：" + "、".join(sorted(_cu_t)))
         else:
             err("「不可分」判据两边不一致：CustomUI={" + "、".join(sorted(_cu_t)) +
-                "} 工业={" + "、".join(sorted(_in_t)) + "} ⟹ 显示拆成两格、扣账却按一条算")
+                "} 下游={" + "、".join(sorted(_in_t)) + "} ⟹ 显示拆成两格、扣账却按一条算")
     # 主文件绝不能引用 CustomUI 的类型（软依赖隔离第一条）
     if "StorageUiPanels.IsIndivisibleItem" not in strip_comments(indmain):
-        ok("工业主文件没有引用 CustomUI 的不可分判据（避免没装 CustomUI 时 JIT 解析失败）")
+        ok("下游主文件没有引用 CustomUI 的不可分判据（避免没装 CustomUI 时 JIT 解析失败）")
     else:
         err("Industrial.cs 引用了 StorageUiPanels —— 主文件必须零引用 CustomUI 类型")
     # 不可分物品按引用哈希分组后，同 id 同耐久会**并列**，List.Sort 不稳定 ⟹ 必须全序
@@ -6770,24 +6774,24 @@ else:
         else:
             err("Awake 里检测/安装顺序不对或压根没接（i_has=%d i_ins=%d）" % (i_has, i_ins))
 
-    # ---- 用的正是为工业这种数据模型准备的那条入口 ----
+    # ---- 用的正是为下游这种数据模型准备的那条入口 ----
     if "DigitalBoxRegion : IStorageUiProvider, IStorageUiRegion" in br_code:
-        ok("工业走公开区块接口（不抢存储位，面板交给宿主排版）")
+        ok("下游走公开区块接口（不抢存储位，面板交给宿主排版）")
     else:
-        err("工业没实现公开区块接口")
+        err("下游没实现公开区块接口")
     if "new StorageSlotList()" in br_code and "grid.Refresh(slots)" in br_code:
-        ok("工业用**扁平槽位入口**（数字箱本来就是 List<Item> + 总格数）")
+        ok("下游用**扁平槽位入口**（数字箱本来就是 List<Item> + 总格数）")
     else:
-        err("工业没用扁平入口 —— 要么绕开了组件，要么说明 E'-1 那条入口是白做的")
+        err("下游没用扁平入口 —— 要么绕开了组件，要么说明 E'-1 那条入口是白做的")
     if "slots.CapacityCells = st.Capacity" in br_code:
         ok("容量用数字箱自己的总格数（st.Capacity），不是硬编一个数")
     else:
         err("没把数字箱容量交给头部 → 占用统计缺分母")
     if "PowerNetwork.DiskIdOf(" in br_code and "EnsureDiskData(" in br_code \
             and "dd.contents" in br_code:
-        ok("内容读 DiskData.contents —— 与工业自己那套界面同源，数据没有第二份")
+        ok("内容读 DiskData.contents —— 与下游自己那套界面同源，数据没有第二份")
     else:
-        err("工业区块的数据源不是它自己界面的那一份（两处显示迟早不一致）")
+        err("下游区块的数据源不是它自己界面的那一份（两处显示迟早不一致）")
     # ★ 语义在 2026-10-03 换过一次（用户选定"数字箱自己的借道界面"）：
     #   路 A（区块里点击即转移）→ 借道界面（左键托起一件、落到背包/丢地上才扣账），
     #   区块降级为**只读预览**（点它 = 进入借道界面）。
@@ -6797,9 +6801,9 @@ else:
     #     ③ 同一套界面里按键语义只能有一套。
     if "grid.OnSlotClicked = OnSlot;" in br_code and \
             "grid.OnSlotRightClicked = OnSlotRight;" in br_code:
-        ok("工业挂了槽位回调：动作复用工业自己的数据核心，不新写一条改存档的路径")
+        ok("下游挂了槽位回调：动作复用下游自己的数据核心，不新写一条改存档的路径")
     else:
-        err("工业没挂回调（或回调改名了）")
+        err("下游没挂回调（或回调改名了）")
     if "DigitalUI.DeductLedger(" in br_code:
         ok("扣账走纯数据核心 DeductLedger（不碰数字箱 UI 的 currentDrop / Rebuild）")
     else:
@@ -6871,7 +6875,7 @@ else:
         ok("动作完成后标脏，下一帧按新数据重建（不在回调里当场重算）")
     else:
         err("取出后没标脏 —— 界面会继续显示已经不存在的格子")
-    # 工业侧新增的公开核心不得反过来依赖 UI
+    # 下游侧新增的公开核心不得反过来依赖 UI
     # ★★ 数据安全的根：必须"先放进背包成功、才扣数字箱"，且用的是返回 bool 的 tryAddItem，
     #    不是会 dropItem 掉地上的 forceAddItem（玩家看不见就以为东西消失了）。
     _wa = re.search(r"internal static string WithdrawAmount\([\s\S]*?\n        \}", indmain)
@@ -7214,7 +7218,7 @@ else:
     # 公开面要有外部消费者钉住（同坑 #45/#49 的教训：内置视图能走 internal）
     if br:
         if "StorageUiRelay.Track(" in br and "AddResolvedHandler(" in br:
-            ok("桥接探针真的 Track 并挂了落点回调（公开面对外部可用）")
+            ok("接入自检真的 Track 并挂了落点回调（公开面对外部可用）")
         else:
             err("桥接没走 Track/AddResolvedHandler —— 对账的公开面没人从外部验证")
         if "new RelayResolvedHandler(" in br:
@@ -7270,14 +7274,14 @@ else:
         _btk = re.search(r"Track\(it,\s*\"stock\",\s*CustomUIBridgePlugin\.RelaySource\)",
                          strip_comments(br)) is not None
         if _bsub and _btk:
-            ok("桥接探针登记与订阅用**同一个来源串**（只声明一头会让对账链静默断掉）")
+            ok("接入自检登记与订阅用**同一个来源串**（只声明一头会让对账链静默断掉）")
         else:
-            err("桥接探针的登记/订阅来源不一致或没带来源 —— 对账链会静默断掉 / 或又退回全局订阅")
+            err("桥接接入自检的登记/订阅来源不一致或没带来源 —— 对账链会静默断掉 / 或又退回全局订阅")
         _brc = strip_comments(br)
         if "ResolvedHandlerSources()" in _brc and "HasGlobalHandlers" in _brc:
-            ok("桥接探针在运行期读来源清单/全局订阅者（这两个新公开面有人从外部钉住）")
+            ok("接入自检在运行期读来源清单/全局订阅者（这两个新公开面有人从外部钉住）")
         else:
-            err("桥接探针没读 ResolvedHandlerSources/HasGlobalHandlers —— 新公开面没人从外部验证")
+            err("接入自检没读 ResolvedHandlerSources/HasGlobalHandlers —— 新公开面没人从外部验证")
 
 # -------------------- 27. 公开面：每个公开成员都得有人真的用过它 --------------------
 # 为什么要有这一节：公开面清单如果**手写在文档里**，立刻开始腐烂（同坑 #67）。
@@ -7349,7 +7353,7 @@ for _afn in FILES:
 _consumers = {}
 _cb_file = os.path.join(HERE, "..", "CustomUIBridge-Source", "CustomUIBridge.cs")
 if os.path.isfile(_cb_file):
-    _consumers["探针"] = io.open(_cb_file, encoding="utf-8-sig", errors="replace").read()
+    _consumers["接入自检"] = io.open(_cb_file, encoding="utf-8-sig", errors="replace").read()
 _ind_dir = os.path.join(HERE, "..", "Industrial-Source")
 if os.path.isdir(_ind_dir):
     _itxt = []
@@ -7358,14 +7362,14 @@ if os.path.isdir(_ind_dir):
             _itxt.append(io.open(os.path.join(_ind_dir, _if),
                                  encoding="utf-8-sig", errors="replace").read())
     if _itxt:
-        _consumers["工业"] = "\n".join(_itxt)
+        _consumers["下游"] = "\n".join(_itxt)
 if not _consumers:
-    err("找不到任何外部消费者源码 —— 公开面就没法被外部证明（探针 / 工业都该在）")
+    err("找不到任何外部消费者源码 —— 公开面就没法被外部证明（接入自检 / 下游都该在）")
 
 # ---- 例外表 ----
 # ★ 默认规则：**所有公开成员都按"接入面"处理** ⟹ 必须有外部消费者，否则 FAIL。
 #   这条默认值就是"防默默长出新公开面"的机制：没被任何人用过的公开成员，
-#   要么补一条外部调用（探针 / 工业），要么到下面登记成"内部 / 可选"。
+#   要么补一条外部调用（接入自检 / 下游），要么到下面登记成"内部 / 可选"。
 #   ⚠ 登记成"内部"时要写清**为什么第三方不该调**，别拿它当"懒得补证据"的垃圾桶。
 API_EXCEPTIONS = {
     # 内置视图实现 IStorageUiProvider / IStorageUiRegion 的产物。
@@ -7398,7 +7402,7 @@ API_EXCEPTIONS = {
     #   基类里那四条规矩（判代 / 只藏不拆 / `IsBuilt` 守卫 / 失败自拆）。
     #   要挂内容只 override **`Refresh`**（protected，不进这张表）。
     #   ⚠ 不是"懒得补证据"：这几个成员的消费者是**宿主**（本插件自己），
-    #     而本门禁只认**外部程序集**（工业 / 探针）—— 同类先例见上面 `StorageGridView` 那批。
+    #     而本门禁只认**外部程序集**（下游 / 接入自检）—— 同类先例见上面 `StorageGridView` 那批。
     ("StorageUiRegionBase", "CanHandle"): "内部",     # 基类固定恒 false（改 true = 区块抢存储位，语义冲突）
     ("StorageUiRegionBase", "Open"): "内部",         # 判代 + 建 + 刷新 + 失败自拆，四条规矩都在里面
     ("StorageUiRegionBase", "Close"): "内部",        # 只藏不拆（让第三方自己 override = 迟早写出 RemoveChild）
@@ -7415,7 +7419,7 @@ API_EXCEPTIONS = {
     # ★ 26.10.3.48：门禁补上「`{` 另起一行」那一类属性后才扫出来的（以前整类隐形）。
     ("StorageUiContext", "VirtualPage"): "内部",      # 三档**原始值**；注释明写"别直接比较它，
                                                      # 用 UsableAsContainer / WantsRegions" ⟹
-                                                     # 读它等于绕开收口（探针读的就是那两个属性）
+                                                     # 读它等于绕开收口（接入自检读的就是那两个属性）
     # 可选（诊断 / 边角能力，用得上但不影响接入）
     ("StorageUiRegistry", "Find"): "可选",            # 诊断："谁会接管这个箱子"
     ("StorageUiRegistry", "GetById"): "可选",         # 按 Id 找 provider（做设置界面时用）
@@ -7473,14 +7477,14 @@ if _api_orphan:
 else:
     ok("接入面里的每一项都至少被一个外部插件真调用过（没有「写了没人用」的公开面）")
 
-# ④ 探针的「运行期证据」必须落在**打开就看得见**的地方。
-#   为什么单拎这一条：本探针的验收方式一贯是"打开箱子 → 看面板"，
+# ④ 接入自检的「运行期证据」必须落在**打开就看得见**的地方。
+#   为什么单拎这一条：本接入自检的验收方式一贯是"打开箱子 → 看面板"，
 #   而 26.10.3.45 把 ctx 三字段挂到了网格的**格子 Tooltip** 上 ——
 #   Tooltip 只对着"有物品的格子"出现，背包一空就**一个格子都没有**，
 #   照验收提示去停鼠标必然一无所获（用户实测「哪个标题？没看到」，坑 #71）。
 #   ⟹ 钉死：证据走状态行（打开就有），且**不许**再往 TooltipHint 塞上下文
 #     （那是「自定义按键约定」的位置，语义挪用 = 下一个人会照着抄错）。
-_brtxt = strip_comments(_consumers.get("探针", ""))
+_brtxt = strip_comments(_consumers.get("接入自检", ""))
 # ⚠ 判据必须**认块**、不能只看"字符串在不在"：`CtxSummary()` 在**方法定义处**也有，
 #   只查存在性的话，把调用点删掉照样通过（本轮第一版就是这么写的，阳性对照当场揭穿）。
 _sa_blk = re.search(r'statusA\.Text\s*=[^;]+;', _brtxt)
@@ -7492,7 +7496,7 @@ if _ctx3 and _sa_blk and ("CtxSummary()" in _sa_blk.group(0)) \
 else:
     err("ctx 三字段没被用上，或调用点没落在状态行/状态指纹上 —— Tooltip 只在有物品的格子上出现，空背包看不到")
 if re.search(r'TooltipHint\s*=\s*"ctx', _brtxt):
-    err("探针又把上下文塞进 TooltipHint 了 —— 那是「按键约定」的位置，且空背包时看不见")
+    err("接入自检又把上下文塞进 TooltipHint 了 —— 那是「按键约定」的位置，且空背包时看不见")
 else:
     ok("上下文没有塞进 TooltipHint（它只该放「按键约定」，且要挂格子）")
 

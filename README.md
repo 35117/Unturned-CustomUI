@@ -3,7 +3,7 @@
 > 一个 **Unturned（3.26.x）+ BepInEx 5** 插件框架。
 > 玩家按 F 打开箱子/路障时，**右侧存储区**由插件决定显示什么、怎么排、点一下做什么。
 >
-> **当前版本 `26.10.12.3`** · GUID `com.trae.customui` · 产物 `CustomUIMod.dll`
+> **当前版本 `26.10.12.3`** · GUID `com.35117.customui` · 产物 `CustomUIMod.dll`
 
 ---
 
@@ -20,12 +20,12 @@
 
 1. 装 **BepInEx 5.4.23.5 (x64)** 到 Unturned 根目录（[下载](https://github.com/BepInEx/BepInEx/releases)）；
 2. 把 **`CustomUIMod.dll`** 放进 `<Unturned>/BepInEx/Plugins/`；
-3. 启动一次游戏 → 生成 `<Unturned>/BepInEx/config/com.trae.customui.cfg`。
+3. 启动一次游戏 → 生成 `<Unturned>/BepInEx/config/com.35117.customui.cfg`。
 
 > **联机**：客户端与服务端**各装各的**（客户端不会读服务端的 `Plugins`）。
 > 界面功能全在客户端跑；服务端装了不会报错，只是不做事。
 
-## 常用配置（`com.trae.customui.cfg`，**改完立即生效**）
+## 常用配置（`com.35117.customui.cfg`，**改完立即生效**）
 
 | 项 | 默认 | 说明 |
 |---|---|---|
@@ -82,3 +82,7 @@ python _mkrelease.py       :: 打发布包 → 发布包\CustomUIMod-<版本>.zi
 **未声明许可证**（作者保留所有权利）：可自由下载使用，但未经许可请勿二次分发或用于商业用途。
 
 这是**非官方**项目，与 Smartly Dressed Games 无关。装之前请备份存档。
+
+## 作者
+
+**35117** · **Deepseek-V4.1-Flash（主）** · **Hy4 preview** · **Space Bunny**

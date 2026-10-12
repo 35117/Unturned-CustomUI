@@ -38,14 +38,14 @@ using UnityEngine;
 
 namespace CustomUI
 {
-    [BepInPlugin("com.trae.customui", "CustomUI 自定义交互界面", "26.10.12.3")]
+    [BepInPlugin("com.35117.customui", "CustomUI 自定义交互界面", "26.10.12.3")]
     public class CustomUIPlugin : BaseUnityPlugin
     {
         internal static CustomUIPlugin Instance;
 
         // ⚠ 改 GUID 时这两处必须同步：本常量 与 下方 [BepInPlugin] 的第一参数。
         //   补丁自检按 owner 匹配，不一致会导致自检永远报「没有本插件的补丁」。
-        internal const string HarmonyId = "com.trae.customui";
+        internal const string HarmonyId = "com.35117.customui";
 
         // ⚠ **版本号的唯一真源就是上面 [BepInPlugin] 的第三参数**（日志与 BepInEx 元数据都以它为准）。
         //   别在这里另立一个常量、也别在头注释里再写一遍 —— 写两处就会漂

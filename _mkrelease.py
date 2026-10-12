@@ -34,7 +34,7 @@ README_TXT = """CustomUI —— 自定义交互界面  (v{ver})
   2) 把本包里的 BepInEx/Plugins/CustomUIMod.dll 放进
      <Unturned>/BepInEx/Plugins/
   3) 启动游戏一次 —— 会生成
-     <Unturned>/BepInEx/config/com.trae.customui.cfg
+     <Unturned>/BepInEx/config/com.35117.customui.cfg
      按需修改；改完【立即生效】，不用重启。
 
 【联机】
